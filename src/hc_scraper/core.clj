@@ -56,38 +56,46 @@
       (str "https://store.steampowered.com/app/" data-appid))))
 
 
-(defn parse-game [data]
+(defn process-game! [data]
   (let [title (:title data)
+        _ (println "Next:" title)
         genres (string/join ", " (:genres data))
         developers (string/join ", " (:developers data))
-        steam-url (fetch-steam-url title)
         yt-url (str "https://www.youtube.com/watch?v=" (-> data :carousel_content :youtube-link first))
         choice-url (:choice-url data)
         image-url (:image data)
         description (-> (parse-html (:description data))
                         (search :body {})
-                        md/as-markdown)]
-    (str
-      (md/heading 1 title) "\n"
-      (md/image image-url) md/new-line
-      "Genres: " (md/italic genres) md/new-line
-      "Developers: " (md/bold developers)
-      md/new-section
-      (md/bold
-        (str (md/link "Steam Page" steam-url) " | " (md/link "Youtube Trailer" yt-url) " | " (md/link "Humble Choice Link" choice-url)))
-      md/new-section
-      "-----"
-      md/new-section
-      description
-      ;; TODO: add system specs
-      )))
+                        md/as-markdown)
+        _ (print " └ Searching for Steam Page URL...")
+        steam-url (fetch-steam-url title)
+        _ (println (if steam-url " OK." " Failed."))
+        markdown (str
+                   (md/heading 1 title) "\n"
+                   (md/image image-url) md/new-line
+                   "Genres: " (md/italic genres) md/new-line
+                   "Developers: " (md/bold developers)
+                   md/new-section
+                   (md/bold
+                     (str (md/link "Steam Page" steam-url) " | " (md/link "Youtube Trailer" yt-url) " | " (md/link "Humble Choice Link" choice-url)))
+                   md/new-section
+                   "-----"
+                   md/new-section
+                   description
+                   ;; TODO: add system specs
+                   )
+        file (str "./games/" (:game-url-name data) ".md")]
+    ;; TODO: upload to Trello board
+    (io/make-parents file)
+    (spit file markdown)))
 
 
 (defn -main
   [& [choice-month-url]]
   (if (not choice-month-url)
     (println "Please supply a humble choice month URL as parameter")
-    (let [html (slurp-hiccup choice-month-url)
+    (let [_ (println "Making request to" choice-month-url)
+          html (slurp-hiccup choice-month-url)
           [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"})
           raw-edn (-> json-data
                       (json/read-str :key-fn keyword))
@@ -97,12 +105,13 @@
                     :contentChoiceData
                     :initial
                     :content_choices)]
-      (doseq [game games]
-        (let [game-url-name (name (key game))
-              game-data (assoc (val game) :choice-url (str base-url game-url-name))
-              game-markdown (parse-game game-data)
-              file (str "./games/" game-url-name ".md")]
-          ;; TODO: upload to Trello board
-          (io/make-parents file)
-          (spit file game-markdown))))))
-
+      (if (not games)
+        (println "No Humble Choice games found. Is the URL correct?")
+        (do
+          (println "Found" (count games) "games.")
+          (doseq [game games]
+            (let [game-url-name (name (key game))
+                  game-data (assoc (val game)
+                              :game-url-name game-url-name
+                              :choice-url (str base-url game-url-name))]
+              (process-game! game-data))))))))
