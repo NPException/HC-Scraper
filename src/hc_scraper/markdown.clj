@@ -22,7 +22,12 @@
   (str "!" (link nil url)))
 
 (defn code [x]
-  (str "\n```\n" (pr-str x) "\n```\n"))
+  (if (string/blank? x)
+    x
+    (str " `" (string/trim x) "` ")))
+
+(defn code-section [x]
+  (str "\n```\n" x "\n```\n"))
 
 (defn ^:private li-element? [x]
   (and (vector? x)
@@ -52,6 +57,8 @@
         (= tag :b) (apply str (map (comp bold as-markdown) content))
         (= tag :em) (apply str (map (comp italic as-markdown) content))
         (= tag :i) (apply str (map (comp italic as-markdown) content))
+        (= tag :u) (apply str (map (comp italic as-markdown) content))
+        (= tag :code) (apply str (map (comp code as-markdown) content))
         ;; TODO: support nested lists
         (= tag :ul) (->> content
                          (filter li-element?)
@@ -68,4 +75,4 @@
                             image)
         (re-matches #"h(\d{1,2})" (name tag)) (let [[_ level] (re-matches #"h(\d{1,2})" (name tag))]
                                                 (heading (Integer/parseInt level) (md-content)))
-        :unknown (code element)))))
+        :unknown (code-section (pr-str element))))))

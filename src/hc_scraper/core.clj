@@ -1,6 +1,7 @@
 (ns hc-scraper.core
   (:gen-class)
   (:require [hc-scraper.markdown :as md]
+            [hc-scraper.trello :as trello]
             [hickory.core :as hickory]
             [clojure.data.json :as json]
             [clojure.string :as string]
@@ -8,12 +9,12 @@
   (:import [java.util Map]))
 
 
-(defn submap?
+(defn ^:private submap?
   "Checks whether m contains all entries in sub."
   [^Map sub ^Map m]
   (.containsAll (.entrySet m) (.entrySet sub)))
 
-(defn search
+(defn ^:private search
   "Searches the element hierarchy for an element with the given tag and matching attributes"
   [element target-tag target-attribs]
   (when (vector? element)
@@ -28,20 +29,20 @@
               (recur (next remaining)))))))))
 
 
-(defn parse-html [html]
+(defn^:private parse-html [html]
   (->> html
        hickory/parse
        hickory/as-hiccup
        (filter vector?)
        first))
 
-(defn slurp-hiccup [f]
+(defn^:private slurp-hiccup [f]
   (-> f
       slurp
       parse-html))
 
 
-(defn fetch-steam-url
+(defn^:private fetch-steam-url
   "Queries steamdb.info for the game title, and returns the first store page link found.
   If the game comes with DLCs the title is cleaned up if possible."
   [title]
@@ -56,7 +57,7 @@
       (str "https://store.steampowered.com/app/" data-appid))))
 
 
-(defn process-game! [data]
+(defn ^:private process-game! [data]
   (let [title (:title data)
         _ (println "Next:" title)
         genres (string/join ", " (:genres data))
@@ -67,12 +68,13 @@
         description (-> (parse-html (:description data))
                         (search :body {})
                         md/as-markdown)
-        _ (print " └ Searching for Steam Page URL...")
+        system-requirements (-> (parse-html (:system_requirements data))
+                                (search :body {})
+                                md/as-markdown)
+        _ (print " - Searching for Steam Page URL... ")
         steam-url (fetch-steam-url title)
-        _ (println (if steam-url " OK." " Failed."))
+        _ (println (if steam-url "OK" "Failed"))
         markdown (str
-                   (md/heading 1 title) "\n"
-                   (md/image image-url) md/new-line
                    "Genres: " (md/italic genres) md/new-line
                    "Developers: " (md/bold developers)
                    md/new-section
@@ -82,12 +84,23 @@
                    "-----"
                    md/new-section
                    description
-                   ;; TODO: add system specs
-                   )
-        file (str "./games/" (:game-url-name data) ".md")]
-    ;; TODO: upload to Trello board
-    (io/make-parents file)
-    (spit file markdown)))
+                   md/new-section
+                   "-----"
+                   (md/heading 3 "System Requirements")
+                   system-requirements)]
+
+    (print " - Uploading to Trello... ")
+    (if (trello/upload title image-url yt-url markdown (str "HC " (:choice-month data)))
+      (println "OK")
+      (do (println "Failed")
+          (println " - Saving markdown")
+          (let [file (str "./games/" (:game-url-name data) ".md")
+                enhanced-markdown (str
+                                    (md/heading 1 title) "\n"
+                                    (md/image image-url) md/new-line
+                                    markdown)]
+            (io/make-parents file)
+            (spit file enhanced-markdown))))))
 
 
 (defn -main
@@ -101,6 +114,7 @@
                       (json/read-str :key-fn keyword))
           data (:contentChoiceOptions raw-edn)
           base-url (str "https://www.humblebundle.com/subscription/" (:productUrlPath data) "/")
+          choice-month (:title data)
           games (-> data
                     :contentChoiceData
                     :initial
@@ -113,5 +127,6 @@
             (let [game-url-name (name (key game))
                   game-data (assoc (val game)
                               :game-url-name game-url-name
+                              :choice-month choice-month
                               :choice-url (str base-url game-url-name))]
               (process-game! game-data))))))))
