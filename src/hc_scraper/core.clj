@@ -14,45 +14,53 @@
   [^Map sub ^Map m]
   (.containsAll (.entrySet m) (.entrySet sub)))
 
-(defn ^:private search
-  "Searches the element hierarchy for an element with the given tag and matching attributes"
+(defn ^:private search-all
+  "Searches the element hierarchy for elements with the given tag and matching attributes"
   [element target-tag target-attribs]
   (when (vector? element)
-    (let [[tag attribs & children] element]
-      (if (and (or (nil? target-tag) (= tag target-tag))
-               (submap? target-attribs attribs))
-        element
-        (loop [remaining children]
-          (if-let [found (search (first remaining) target-tag target-attribs)]
-            found
-            (when remaining
-              (recur (next remaining)))))))))
+    (let [[tag attribs & children] element
+          match? (and (or (nil? target-tag) (= tag target-tag))
+                      (submap? target-attribs attribs))]
+      (loop [remaining children
+             results (if match? (cons element nil) '())]
+        (if (empty? remaining)
+          results
+          (recur (rest remaining)
+                 (concat results (search-all (first remaining) target-tag target-attribs))))))))
 
 
-(defn^:private parse-html [html]
+(defn ^:private search
+  "Searches the element hierarchy for the first element with the given tag and matching attributes"
+  [element target-tag target-attribs]
+  (first (search-all element target-tag target-attribs)))
+
+
+(defn ^:private parse-html [html]
   (->> html
        hickory/parse
        hickory/as-hiccup
        (filter vector?)
        first))
 
-(defn^:private slurp-hiccup [f]
+(defn ^:private slurp-hiccup [f]
   (-> f
       slurp
       parse-html))
 
 
-(defn^:private fetch-steam-url
+(defn ^:private fetch-steam-url
   "Queries steamdb.info for the game title, and returns the first store page link found.
   If the game comes with DLCs the title is cleaned up if possible."
   [title]
-  (let [[_ clean-title] (re-matches #"(.*?)( \+ \d+ DLCs?)$" title)
-        encoded-title (java.net.URLEncoder/encode ^String (or clean-title title) "UTF-8")
+  (let [clean-title (or (second (re-matches #"(.*?)( \+ \d+ DLCs?)$" title))
+                        title)
+        encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
         html (slurp-hiccup (str "https://steamdb.info/search/?a=app&type=1&category=0&q=" encoded-title))
-        ;; TODO: check results for exact title match instead of grabbing the first row.
-        ;; Example: https://steamdb.info/search/?a=app&q=Street+Fighter+V
-        ;; only fallback to first row if no exact match is found
-        [_ {:keys [data-appid]}] (search html :tr {:class "app"})]
+        candidates (search-all html :tr {:class "app"})
+        match (->> candidates
+                   (filter #(contains? (set %) [:td {} clean-title]))
+                   first)
+        [_ {:keys [data-appid]}] (or match (first candidates))]
     (when data-appid
       (str "https://store.steampowered.com/app/" data-appid))))
 
@@ -94,7 +102,7 @@
       (println "OK")
       (do (println "Failed")
           (println " - Saving markdown")
-          (let [file (str "./games/" (:game-url-name data) ".md")
+          (let [file (str "./not-uploaded/" (:game-url-name data) ".md")
                 enhanced-markdown (str
                                     (md/heading 1 title) "\n"
                                     (md/image image-url) md/new-line
