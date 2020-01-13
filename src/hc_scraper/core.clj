@@ -56,13 +56,23 @@
                         title)
         encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
         html (slurp-hiccup (str "https://steamdb.info/search/?a=app&type=1&category=0&q=" encoded-title))
-        candidates (search-all html :tr {:class "app"})
-        match (->> candidates
+        candidate (search-all html :tr {:class "app"})
+        match (->> candidate
                    (filter #(contains? (set %) [:td {} clean-title]))
                    first)
-        [_ {:keys [data-appid]}] (or match (first candidates))]
+        best-guess (->> candidate
+                        ;; game name is at index 7 in :tr element
+                        (filter #(let [[_ _ name] (nth % 7)]
+                                   (string/starts-with?
+                                     (string/lower-case name)
+                                     (string/lower-case clean-title))))
+                        first)
+        easy-guess (first candidate)
+        [_ {:keys [data-appid]}] (or match best-guess easy-guess)]
     (when data-appid
-      (str "https://store.steampowered.com/app/" data-appid))))
+      (md/link
+        (str "Steam Page" (when-not match " (?)"))
+        (str "https://store.steampowered.com/app/" data-appid)))))
 
 (defn print-flush [& args]
   (apply print args)
@@ -86,14 +96,14 @@
                                     (search :body {})
                                     md/as-markdown)
         _ (print-flush " - Searching for Steam Page URL... ")
-        steam-url (fetch-steam-url title)
-        _ (println (if steam-url "OK" "Failed"))
+        md-steam-link (fetch-steam-url title)
+        _ (println (if md-steam-link "OK" "Failed"))
         description-md (str
                          "Genres: " (md/italic genres) md/new-line
                          "Developers: " (md/bold developers)
                          md/new-section
                          (md/bold
-                           (str (md/link "Steam Page" steam-url) " | " (md/link "Youtube Trailer" yt-url) " | " (md/link "Humble Choice Link" choice-url)))
+                           (str md-steam-link " | " (md/link "Youtube Trailer" yt-url) " | " (md/link "Humble Choice Link" choice-url)))
                          md/new-section
                          "-----"
                          md/new-section
@@ -165,4 +175,5 @@
                                   :game-url-name game-url-name
                                   :choice-url (str base-url game-url-name))
                       trello-labels (cons month-label-id (map find-label (:delivery_methods game-data)))]
-                  (process-game! game-data trello-labels))))))))))
+                  (when (= game-url-name "grip")
+                    (process-game! game-data trello-labels)))))))))))
