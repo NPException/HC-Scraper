@@ -66,7 +66,7 @@
                          (map as-markdown)
                          (map #(str "- " %))
                          (string/join "\n")
-                         (#(str % new-section)))
+                         (#(str new-section % new-section)))
         (= tag :li) (md-content)
         (= tag :video) (->> content
                             (filter source-element?)
