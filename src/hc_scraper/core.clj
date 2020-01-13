@@ -77,10 +77,10 @@
         yt-url (str "https://www.youtube.com/watch?v=" (-> data :carousel_content :youtube-link first))
         choice-url (:choice-url data)
         image-url (:image data)
-        description (some-> (:description data)
-                            parse-html
-                            (search :body {})
-                            md/as-markdown)
+        description (-> (:description data)
+                        parse-html
+                        (search :body {})
+                        md/as-markdown)
         system-requirements (some-> (:system_requirements data)
                                     parse-html
                                     (search :body {})
@@ -98,10 +98,12 @@
                          "-----"
                          md/new-section
                          description
-                         md/new-section
-                         "-----"
-                         (md/heading 3 "System Requirements")
-                         system-requirements)]
+                         (when system-requirements
+                           (str
+                             md/new-section
+                             "-----"
+                             (md/heading 3 "System Requirements")
+                             system-requirements)))]
 
     (print-flush " - Uploading to Trello... ")
     (if (trello/upload title description-md image-url yt-url trello-labels)
