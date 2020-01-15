@@ -3,7 +3,8 @@
             [clojure.data.json :as json]
             [clojure.string :as string])
   (:import [java.text Collator]
-           [java.util Locale Date]))
+           [java.util Locale Date]
+           [java.util.concurrent LinkedBlockingQueue]))
 
 (def ^:private api-url "https://api.trello.com/1")
 
@@ -13,17 +14,30 @@
 (def board-id (:board-id trello-data))
 (def list-id (:list-id trello-data))
 
-;; TODO: create request queue, to re-queue rate-limited requests without starving the http-kit worker pool
+
+(defonce rate-limit (atom 0))
+(def rate-limit-sleep 200)
+
+(defonce ^LinkedBlockingQueue request-queue (LinkedBlockingQueue.))
+(defonce request-runner
+         (future
+           (while true
+             (let [request-fn (.take request-queue)]
+               (when (> @rate-limit 0)
+                 (Thread/sleep rate-limit-sleep)
+                 (swap! rate-limit dec))
+               (request-fn)))))
+
 
 (defn ^:private trello-request
   [method param-type parse-response? async? path-seq params]
   (let [url (string/join "/" (cons api-url path-seq))
-        make-request (fn make-request [retry?]
+        response (promise)
+        make-request (fn execute-request []
                        (http/request
                          {:method    method
                           :url       url
-                          param-type (merge params auth)
-                          :deadlock-guard? false}
+                          param-type (merge params auth)}
                          (fn [result]
                            (when (or (case (:status result)
                                        (200 429) false
@@ -31,17 +45,13 @@
                                      (:error result))
                              (println (str "Trello returned error for request to " method " " url
                                            " -> status: " (:status result) ", error: " (:error result))))
-                           (if retry?
-                             (loop [result result
-                                    backoff (concat [150 300 500 1000] (repeatedly #(+ 2000 (rand-int 2000))))]
-                               ;; check for rate limiting
-                               (if (= 429 (:status result))
-                                 (do (println (Date.) "Ran into Trello's rate limit. Wait:" (first backoff) method url)
-                                     (Thread/sleep (first backoff))
-                                     (recur @(make-request false) (next backoff)))
-                                 result))
-                             result))))
-        response (make-request true)]
+                           ;; check for rate limiting
+                           (if (= 429 (:status result))
+                             (do (println (Date.) "Hit rate limit. Retry after short wait." method url)
+                                 (swap! rate-limit inc)
+                                 (.put request-queue execute-request))
+                             (deliver response result)))))]
+    (.put request-queue make-request)
     (when-not async?
       (let [success? (= 200 (:status @response))]
         (if (and parse-response? success?)
@@ -132,7 +142,6 @@
     (trello-get ["lists" list-id "cards"] {:fields "name,id"})
     (sort-by (comp make-sortable :name) (Collator/getInstance Locale/GERMANY))
     (map-indexed (fn [idx {id :id}]
-                   (Thread/sleep 100)
                    (trello-put ["cards" id] {:pos (* idx 10000)} true)))
     doall)
   nil)
