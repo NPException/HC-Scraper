@@ -2,50 +2,10 @@
   (:gen-class)
   (:require [hc-scraper.markdown :as md]
             [hc-scraper.trello :as trello]
-            [hickory.core :as hickory]
+            [hc-scraper.html :refer [slurp-hiccup parse-html search-all search]]
             [clojure.data.json :as json]
             [clojure.string :as string]
-            [clojure.java.io :as io])
-  (:import [java.util Map]))
-
-
-(defn ^:private submap?
-  "Checks whether m contains all entries in sub."
-  [^Map sub ^Map m]
-  (.containsAll (.entrySet m) (.entrySet sub)))
-
-(defn ^:private search-all
-  "Searches the element hierarchy for elements with the given tag and matching attributes"
-  [element target-tag target-attribs]
-  (when (vector? element)
-    (let [[tag attribs & children] element
-          match? (and (or (nil? target-tag) (= tag target-tag))
-                      (submap? target-attribs attribs))]
-      (loop [remaining children
-             results (if match? (cons element nil) '())]
-        (if (empty? remaining)
-          results
-          (recur (rest remaining)
-                 (concat results (search-all (first remaining) target-tag target-attribs))))))))
-
-
-(defn ^:private search
-  "Searches the element hierarchy for the first element with the given tag and matching attributes"
-  [element target-tag target-attribs]
-  (first (search-all element target-tag target-attribs)))
-
-
-(defn ^:private parse-html [html]
-  (->> html
-       hickory/parse
-       hickory/as-hiccup
-       (filter vector?)
-       first))
-
-(defn ^:private slurp-hiccup [f]
-  (-> f
-      slurp
-      parse-html))
+            [clojure.java.io :as io]))
 
 
 (defn ^:private fetch-steam-url
