@@ -1,5 +1,6 @@
 (ns hc-scraper.html
-  (:require [hickory.core :as hickory])
+  (:require [hickory.core :as hickory]
+            [org.httpkit.client :as http])
   (:import [java.util Map]))
 
 
@@ -51,7 +52,9 @@
        first))
 
 
-(defn slurp-hiccup [f]
-  (-> f
-      slurp
-      parse-html))
+(defn load-hiccup [url]
+  (some->
+    (http/request {:method :get :url url})
+    deref
+    :body
+    parse-html))

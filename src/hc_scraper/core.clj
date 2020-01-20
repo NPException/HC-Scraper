@@ -2,7 +2,7 @@
   (:gen-class)
   (:require [hc-scraper.markdown :as md]
             [hc-scraper.trello :as trello]
-            [hc-scraper.html :refer [slurp-hiccup parse-html search-all search]]
+            [hc-scraper.html :refer [load-hiccup parse-html search-all search]]
             [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.java.io :as io]))
@@ -15,7 +15,7 @@
   (let [clean-title (or (second (re-matches #"(.*?)( \+ \d+ DLCs?)$" title))
                         title)
         encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
-        html (slurp-hiccup (str "https://steamdb.info/search/?a=app&type=1&category=0&q=" encoded-title))
+        html (load-hiccup (str "https://steamdb.info/search/?a=app&type=1&category=0&q=" encoded-title))
         candidate (search-all html :tr {:class "app"})
         match (->> candidate
                    (filter #(contains? (set %) [:td {} clean-title]))
@@ -111,7 +111,7 @@
     (println "Please supply at least one humble choice month URL as parameter")
     (doseq [choice-month-url choice-month-urls]
       (let [_ (println "Making request to" choice-month-url)
-            html (slurp-hiccup choice-month-url)
+            html (load-hiccup choice-month-url)
             [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"})
             raw-edn (-> json-data
                         (json/read-str :key-fn keyword))
