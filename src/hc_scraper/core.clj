@@ -2,7 +2,7 @@
   (:gen-class)
   (:require [hc-scraper.markdown :as md]
             [hc-scraper.trello :as trello]
-            [hc-scraper.html :refer [load-hiccup parse-html search-all search]]
+            [hc-scraper.web :refer [load-hiccup parse-html search-all search]]
             [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.java.io :as io]))

@@ -1,5 +1,6 @@
-(ns hc-scraper.html
+(ns hc-scraper.web
   (:require [hickory.core :as hickory]
+            [clojure.java.io :as io]
             [org.httpkit.client :as http])
   (:import [java.util Map]))
 
@@ -20,7 +21,7 @@
 (defn ^:private submap?
   "Checks whether m contains all entries in sub."
   [^Map sub ^Map m]
-  (.containsAll (.entrySet m) (.entrySet sub)))
+  (or (nil? sub) (.containsAll (.entrySet m) (.entrySet sub))))
 
 (defn search-all
   "Searches a hiccup element hierarchy for elements with the given tag and matching attributes"
@@ -58,3 +59,18 @@
     deref
     :body
     parse-html))
+
+
+(defn download
+  "Downloads data from the given URL, and outputs it to f via spit."
+  [url f]
+  ;; TODO try to hack around http-kit to make this not load the whole file into memory first
+  (println "Downloading" f " - "
+           (-> @(http/request {:method :head :url url}) :headers :content-length
+               Long/parseLong
+               (quot 1000000))
+           "MB")
+  (with-open [in (:body @(http/request {:url url :as :stream}))
+              out (io/output-stream f)]
+    (io/copy in out)))
+
