@@ -20,27 +20,38 @@
 
 (defn ^:private submap?
   "Checks whether m contains all entries in sub."
-  [^Map sub ^Map m]
-  (or (nil? sub) (.containsAll (.entrySet m) (.entrySet sub))))
+  [^Map sub ^Map m case-sensitive?]
+  (loop [ks (keys sub)]
+    (or (nil? ks)
+        (let [a (get sub (first ks) ::NOT_FOUND)
+              b (get m (first ks) ::NOT_FOUND)]
+          (if (or (= a b)
+                  (and (not case-sensitive?)
+                       (string? a)
+                       (string? b)
+                       (= (.toLowerCase ^String a) (.toLowerCase ^String b))))
+            (recur (next ks))
+            false)))))
+
 
 (defn search-all
   "Searches a hiccup element hierarchy for elements with the given tag and matching attributes"
-  [element target-tag target-attribs]
+  [element target-tag target-attribs & [case-sensitive?]]
   (when (vector? element)
     (let [match? (and (or (nil? target-tag) (= (tag element) target-tag))
-                      (submap? target-attribs (attribs element)))]
+                      (submap? target-attribs (attribs element) case-sensitive?))]
       (loop [children (body element)
              results (if match? (cons element nil) '())]
         (if (empty? children)
           results
           (recur (rest children)
-                 (concat results (search-all (first children) target-tag target-attribs))))))))
+                 (concat results (search-all (first children) target-tag target-attribs case-sensitive?))))))))
 
 
 (defn search
   "Searches a hiccup element hierarchy for the first element with the given tag and matching attributes"
-  [element target-tag target-attribs]
-  (first (search-all element target-tag target-attribs)))
+  [element target-tag target-attribs & [case-sensitive?]]
+  (first (search-all element target-tag target-attribs case-sensitive?)))
 
 
 (defn parse-html
@@ -65,12 +76,12 @@
   "Downloads data from the given URL, and outputs it to f via spit."
   [url f]
   ;; TODO try to hack around http-kit to make this not load the whole file into memory first
-  (println "Downloading" f " - "
+  (println "Start downloading" f " - "
            (-> @(http/request {:method :head :url url}) :headers :content-length
                Long/parseLong
                (quot 1000000))
            "MB")
   (with-open [in (:body @(http/request {:url url :as :stream}))
               out (io/output-stream f)]
-    (io/copy in out)))
-
+    (io/copy in out))
+  (println "Finished downloading" f))

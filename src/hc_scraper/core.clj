@@ -16,7 +16,7 @@
                         title)
         encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
         html (load-hiccup (str "https://steamdb.info/search/?a=app&type=1&category=0&q=" encoded-title))
-        candidate (search-all html :tr {:class "app"})
+        candidate (search-all html :tr {:class "app"} true)
         match (->> candidate
                    (filter #(contains? (set %) [:td {} clean-title]))
                    first)
@@ -34,7 +34,7 @@
         (str "Steam Page" (when-not match " (?)"))
         (str "https://store.steampowered.com/app/" data-appid)))))
 
-(defn print-flush [& args]
+(defn ^:private print-flush [& args]
   (apply print args)
   (flush))
 
@@ -49,11 +49,11 @@
         image-url (:image data)
         description (-> (:description data)
                         parse-html
-                        (search :body {})
+                        (search :body nil)
                         md/as-markdown)
         system-requirements (some-> (:system_requirements data)
                                     parse-html
-                                    (search :body {})
+                                    (search :body nil)
                                     md/as-markdown)
         _ (print-flush " - Searching for Steam Page URL... ")
         md-steam-link (fetch-steam-url title)
@@ -112,7 +112,7 @@
     (doseq [choice-month-url choice-month-urls]
       (let [_ (println "Making request to" choice-month-url)
             html (load-hiccup choice-month-url)
-            [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"})
+            [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"} true)
             raw-edn (-> json-data
                         (json/read-str :key-fn keyword))
             data (:contentChoiceOptions raw-edn)
