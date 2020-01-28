@@ -135,5 +135,4 @@
                                   :game-url-name game-url-name
                                   :choice-url (str base-url game-url-name))
                       trello-labels (cons month-label-id (map find-label (:delivery_methods game-data)))]
-                  (when (= game-url-name "grip")
-                    (process-game! game-data trello-labels)))))))))))
+                  (process-game! game-data trello-labels))))))))))
