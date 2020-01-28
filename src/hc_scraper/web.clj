@@ -1,9 +1,11 @@
 (ns hc-scraper.web
   (:require [hickory.core :as hickory]
             [clojure.java.io :as io]
+            [org.httpkit.sni-client :as sni-client]
             [org.httpkit.client :as http])
   (:import [java.util Map]))
 
+(alter-var-root #'org.httpkit.client/*default-client* (fn [_] sni-client/default-client))
 
 (def tag
   "returns the tag keyword of the hiccup element"
@@ -84,4 +86,6 @@
   (with-open [in (:body @(http/request {:url url :as :stream}))
               out (io/output-stream f)]
     (io/copy in out))
-  (println "Finished downloading" f))
+  (println "Finished downloading" f)
+  (flush)
+  true)
