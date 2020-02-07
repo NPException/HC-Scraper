@@ -8,6 +8,11 @@
             [clojure.java.io :as io]))
 
 
+(def trello-data (clojure.edn/read-string (slurp "trello-humble-board-data.edn")))
+(def board-id (:board-id trello-data))
+(def upload-list-id (:upload-list-id trello-data))
+
+
 (defn ^:private fetch-steam-url
   "Queries steamdb.info for the game title, and returns the first store page link found.
   If the game comes with DLCs the title is cleaned up if possible."
@@ -33,6 +38,18 @@
       (md/link
         (str "Steam Page" (when-not match " (?)"))
         (str "https://store.steampowered.com/app/" data-appid)))))
+
+
+(defn ^:private upload-to-trello!
+  "Creates a new card in my Humble Games Trello-board"
+  [title description image-url yt-url label-ids]
+  (when-let [card (trello/create-card! upload-list-id title
+                                       :description description
+                                       :image-url image-url
+                                       :label-ids label-ids)]
+    (trello/add-comment! (:id card) yt-url)
+    :ok))
+
 
 (defn ^:private print-flush [& args]
   (apply print args)
@@ -76,7 +93,7 @@
                              system-requirements)))]
 
     (print-flush " - Uploading to Trello... ")
-    (if (trello/upload title description-md image-url yt-url trello-labels)
+    (if (and trello-labels (upload-to-trello! title description-md image-url yt-url trello-labels))
       (println "OK")
       (do (println "Failed")
           (println " - Saving markdown")
@@ -91,48 +108,75 @@
 
 (defn ^:private create-delivery-method-label
   [delivery-method]
-  (trello/create-label (string/capitalize delivery-method) "sky"))
+  (trello/create-label! board-id (string/capitalize delivery-method) "sky"))
 
 (defn ^:private find-delivery-method-label
   [labels delivery-method]
-  (if-let [[_ id] (first
-                    (filter
-                      #(-> (key %)
-                           string/lower-case
-                           (string/includes? delivery-method))
-                      labels))]
+  (if-let [[_ id] (->> labels
+                       (filter
+                         #(-> (key %)
+                              string/lower-case
+                              (string/includes? delivery-method)))
+                       first)]
     id
     (create-delivery-method-label delivery-method)))
 
 
-(defn -main
-  [& choice-month-urls]
-  (if (empty? choice-month-urls)
+(defn process-url!
+  [choice-month-url upload?]
+  (if (nil? choice-month-url)
     (println "Please supply at least one humble choice month URL as parameter")
-    (doseq [choice-month-url choice-month-urls]
-      (let [_ (println "Making request to" choice-month-url)
-            html (load-hiccup choice-month-url)
-            [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"} true)
-            raw-edn (-> json-data
-                        (json/read-str :key-fn keyword))
-            data (:contentChoiceOptions raw-edn)
-            base-url (str "https://www.humblebundle.com/subscription/" (:productUrlPath data) "/")
-            choice-month (:title data)
-            games (-> data
-                      :contentChoiceData
-                      :initial
-                      :content_choices)]
-        (if (not games)
-          (println "No Humble Choice games found. Is the URL correct?")
-          (do
-            (println "Found" (count games) "games.")
-            (let [month-label-id (trello/create-label (str "HC " choice-month) "red")
-                  all-labels (trello/all-labels)
-                  find-label (memoize #(find-delivery-method-label all-labels %))]
-              (doseq [game games]
-                (let [game-url-name (name (key game))
-                      game-data (assoc (val game)
-                                  :game-url-name game-url-name
-                                  :choice-url (str base-url game-url-name))
-                      trello-labels (cons month-label-id (map find-label (:delivery_methods game-data)))]
-                  (process-game! game-data trello-labels))))))))))
+    (let [_ (println "Making request to" choice-month-url)
+          html (load-hiccup choice-month-url)
+          [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"} true)
+          raw-edn (-> json-data
+                      (json/read-str :key-fn keyword))
+          data (:contentChoiceOptions raw-edn)
+          base-url (str "https://www.humblebundle.com/subscription/" (:productUrlPath data) "/")
+          choice-month (:title data)
+          games (-> data
+                    :contentChoiceData
+                    :initial
+                    :content_choices)]
+      (if (not games)
+        (println "No Humble Choice games found. Is the URL correct?")
+        (do
+          (println "Found" (count games) "games.")
+          (let [month-label-id (and upload?
+                                    (trello/create-label! board-id (str "HC " choice-month) "red"))
+                all-labels (and upload?
+                                (->> (trello/all-labels board-id)
+                                     (map (juxt :name :id))
+                                     (into {})))
+                find-label (and upload?
+                                (memoize #(find-delivery-method-label all-labels %)))]
+            (doseq [game games]
+              (let [game-url-name (name (key game))
+                    game-data (assoc (val game)
+                                :game-url-name game-url-name
+                                :choice-url (str base-url game-url-name))
+                    trello-labels (and upload?
+                                       (cons month-label-id (map find-label (:delivery_methods game-data))))]
+                (process-game! game-data trello-labels)))))))))
+
+
+(defn -main [& [choice-url]]
+  (process-url! choice-url true))
+
+
+;; functions for REPL evaluation
+(comment
+
+  ;; load humble choice games for the given month and year
+  (let [month "february"
+        year 2020
+        upload-to-trello? false]
+    (process-url! (str "https://www.humblebundle.com/subscription/" month "-" year) upload-to-trello?))
+
+  ;; sorts the "NEU" list
+  (trello/sort-list! upload-list-id)
+  )
+
+
+;; TODO: Transfer cards from "NEU" to their apropriate lists,
+;; TODO:  either into their sorted position, or sort the list afterwards.

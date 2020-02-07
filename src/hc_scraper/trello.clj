@@ -8,11 +8,12 @@
 
 (def ^:private api-url "https://api.trello.com/1")
 
-(def trello-data (clojure.edn/read-string (slurp "trello.edn")))
 
-(def auth (select-keys trello-data [:key :token]))
-(def board-id (:board-id trello-data))
-(def list-id (:list-id trello-data))
+(def ^:private auth
+  (select-keys
+    (clojure.edn/read-string (slurp "trello-auth.edn"))
+    [:key :token]))
+
 
 
 (defonce rate-limit (atom 0))
@@ -27,6 +28,7 @@
                  (Thread/sleep rate-limit-sleep)
                  (swap! rate-limit dec))
                (request-fn)))))
+
 
 
 (defn ^:private trello-request
@@ -59,6 +61,7 @@
           success?)))))
 
 
+
 (defn ^:private trello-get
   [path-seq params]
   (trello-request :get :query-params true false path-seq params))
@@ -72,51 +75,52 @@
   (trello-request :put :form-params false async? path-seq params))
 
 
+
 (defn all-labels
-  "Retrieves all labels that exist on the board, as a map from name to id."
-  []
-  (let [labels (trello-get ["boards" board-id "labels"] nil)]
-    (reduce
-      #(assoc %1 (:name %2) (:id %2))
-      {}
-      labels)))
+  "Returns a list of all labels on the board."
+  [board-id]
+  (trello-get ["boards" board-id "labels"] nil))
 
 
-(defn create-label
+(def label-colors #{:yellow :purple :blue :red :green :orange :black :sky :pink :lime})
+
+(defn create-label!
   "Creates a label with the given name and color if it does not exist yet.
-  Returns the id of the created/retrieved label."
-  [name color]
+  Returns the id of the created/retrieved label. Color needs to be a keyword.
+  Creates a colorless label when no color is provided or the color is invaild.
+  (see label-colors)"
+  [board-id name color]
   (:id (trello-post
          ["labels"]
          {:idBoard board-id
           :name    name
-          :color   color})))
+          :color   (name (or (label-colors color)
+                             :null))})))
 
 
-(defn ^:private create-card
-  [name description image-url label-ids]
+(defn create-card!
+  "Creates a card with the given name in the list.
+  Rest of the parameters are optional."
+  [list-id name & {:keys [description image-url label-ids]}]
   (trello-post
     ["cards"]
-    {:idList    list-id
-     :name      name
-     :desc      description
-     :urlSource image-url
-     :idLabels  (string/join "," label-ids)}))
+    (merge
+      {:idList list-id
+       :name   name}
+      (when description
+        {:desc description})
+      (when image-url
+        {:urlSource image-url})
+      (when (seq label-ids)
+        {:idLabels (string/join "," label-ids)}))))
 
 
-(defn ^:private add-comment
+(defn add-comment!
+  "Adds a comment with the given markdown text to a card."
   [card-id text]
   (trello-post
     ["cards" card-id "actions" "comments"]
     {:text text}))
-
-
-(defn upload
-  "Creates a new card in my Humble Games Trello-board"
-  [title description image-url yt-url label-ids]
-  (when-let [card (create-card title description image-url label-ids)]
-    (add-comment (:id card) yt-url)
-    :ok))
 
 
 (defn ^:private trim-articles
@@ -135,8 +139,10 @@
        (re-seq #"\w|[äöü]")
        string/join))
 
-(defn ^:private sort-list!
-  "Sort all cards in a list"
+
+(defn sort-list!
+  "Sorts a list by card titles in ascending alphabetic order,
+  while ignoring leading articles ('a' & 'the')."
   [list-id]
   (some->>
     (trello-get ["lists" list-id "cards"] {:fields "name,id"})
@@ -146,17 +152,16 @@
     doall)
   nil)
 
-(defn ^:private all-lists
-  "Loads all list from the board"
-  []
-  (-> (trello-get ["boards" board-id "lists"] nil)))
 
-(defn ^:private sort-all-lists!
-  "Sorts all list in the board"
-  []
-  (->> (all-lists)
+(defn all-lists
+  "Loads all lists from a board."
+  [board-id]
+  (trello-get ["boards" board-id "lists"] nil))
+
+
+(defn sort-all-lists!
+  "Sorts all list on a board."
+  [board-id]
+  (->> (all-lists board-id)
        (mapv (comp sort-list! :id)))
-  :done)
-
-;; TODO: Transfer cards from "NEU" to their apropriate lists,
-;; TODO:  either into their sorted position, or sort the list afterwards.
+  nil)
