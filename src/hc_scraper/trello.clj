@@ -31,7 +31,7 @@
 
 
 
-(defn ^:private trello-request
+(defn ^:private api-request
   [method param-type parse-response? async? path-seq params]
   (let [url (string/join "/" (cons api-url path-seq))
         response (promise)
@@ -62,24 +62,28 @@
 
 
 
-(defn ^:private trello-get
+(defn api-get
   [path-seq params]
-  (trello-request :get :query-params true false path-seq params))
+  (api-request :get :query-params true false path-seq params))
 
-(defn ^:private trello-post
+(defn api-post
   [path-seq params]
-  (trello-request :post :form-params true false path-seq params))
+  (api-request :post :form-params true false path-seq params))
 
-(defn ^:private trello-put
+(defn api-put
   [path-seq params async?]
-  (trello-request :put :form-params false async? path-seq params))
+  (api-request :put :form-params false async? path-seq params))
+
+(defn api-delete
+  [path-seq async?]
+  (api-request :delete :query-params true async? path-seq nil))
 
 
 
 (defn all-labels
   "Returns a list of all labels on the board."
   [board-id]
-  (trello-get ["boards" board-id "labels"] nil))
+  (api-get ["boards" board-id "labels"] nil))
 
 
 (def label-colors #{:yellow :purple :blue :red :green :orange :black :sky :pink :lime})
@@ -90,7 +94,7 @@
   Creates a colorless label when no color is provided or the color is invaild.
   (see label-colors)"
   [board-id name color]
-  (:id (trello-post
+  (:id (api-post
          ["labels"]
          {:idBoard board-id
           :name    name
@@ -102,7 +106,7 @@
   "Creates a card with the given name in the list.
   Rest of the parameters are optional."
   [list-id name & {:keys [description image-url label-ids]}]
-  (trello-post
+  (api-post
     ["cards"]
     (merge
       {:idList list-id
@@ -118,7 +122,7 @@
 (defn add-comment!
   "Adds a comment with the given markdown text to a card."
   [card-id text]
-  (trello-post
+  (api-post
     ["cards" card-id "actions" "comments"]
     {:text text}))
 
@@ -145,10 +149,10 @@
   while ignoring leading articles ('a' & 'the')."
   [list-id]
   (some->>
-    (trello-get ["lists" list-id "cards"] {:fields "name,id"})
+    (get-cards list-id [:name :id])
     (sort-by (comp make-sortable :name) (Collator/getInstance Locale/GERMANY))
     (map-indexed (fn [idx {id :id}]
-                   (trello-put ["cards" id] {:pos (* idx 10000)} true)))
+                   (api-put ["cards" id] {:pos (* idx 10000)} true)))
     doall)
   nil)
 
@@ -156,7 +160,7 @@
 (defn all-lists
   "Loads all lists from a board."
   [board-id]
-  (trello-get ["boards" board-id "lists"] nil))
+  (api-get ["boards" board-id "lists"] nil))
 
 
 (defn sort-all-lists!
