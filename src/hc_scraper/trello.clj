@@ -102,6 +102,19 @@
                              :null))})))
 
 
+(defn get-cards
+  "Gets the cards in the given list, optionally only returning the desired fields.
+  Fields can be passed as a symbols, keywords or strings."
+  ([list-id]
+   (get-cards list-id nil))
+  ([list-id fields]
+   (api-get ["lists" list-id "cards"]
+            (when (seq fields)
+              {:fields (->> fields
+                            (map name)
+                            (string/join ","))}))))
+
+
 (defn create-card!
   "Creates a card with the given name in the list.
   Rest of the parameters are optional."
@@ -117,6 +130,16 @@
         {:urlSource image-url})
       (when (seq label-ids)
         {:idLabels (string/join "," label-ids)}))))
+
+
+(defn delete-card!
+  [card-id]
+  (api-delete ["cards" card-id] true))
+
+
+(defn archive-card!
+  [card-id]
+  (api-put ["cards" card-id] {:closed true} false))
 
 
 (defn add-comment!
