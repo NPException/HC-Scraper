@@ -175,6 +175,12 @@
 
   ;; sorts the "NEU" list
   (trello/sort-list! upload-list-id)
+
+  ;; delete all cards in "NEU"
+  (->> (trello/get-cards upload-list-id [:id])
+       (map :id)
+       (mapv trello/delete-card!)
+       empty?)
   )
 
 
