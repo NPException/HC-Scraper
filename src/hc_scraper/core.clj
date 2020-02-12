@@ -108,7 +108,7 @@
 
 (defn ^:private create-delivery-method-label
   [delivery-method]
-  (trello/create-label! board-id (string/capitalize delivery-method) "sky"))
+  (trello/create-label! board-id (string/capitalize delivery-method) :sky))
 
 (defn ^:private find-delivery-method-label
   [labels delivery-method]
@@ -143,7 +143,7 @@
         (do
           (println "Found" (count games) "games.")
           (let [month-label-id (and upload?
-                                    (trello/create-label! board-id (str "HC " choice-month) "red"))
+                                    (trello/create-label! board-id (str "HC " choice-month) :red))
                 all-labels (and upload?
                                 (->> (trello/all-labels board-id)
                                      (map (juxt :name :id))
@@ -170,7 +170,7 @@
   ;; load humble choice games for the given month and year
   (let [month "february"
         year 2020
-        upload-to-trello? false]
+        upload-to-trello? true]
     (process-url! (str "https://www.humblebundle.com/subscription/" month "-" year) upload-to-trello?))
 
   ;; sorts the "NEU" list

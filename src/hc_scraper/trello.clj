@@ -93,11 +93,11 @@
   Returns the id of the created/retrieved label. Color needs to be a keyword.
   Creates a colorless label when no color is provided or the color is invaild.
   (see label-colors)"
-  [board-id name color]
+  [board-id label-name color]
   (:id (api-post
          ["labels"]
          {:idBoard board-id
-          :name    name
+          :name    label-name
           :color   (name (or (label-colors color)
                              :null))})))
 
