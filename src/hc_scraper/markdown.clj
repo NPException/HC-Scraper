@@ -43,7 +43,8 @@
 (defn as-markdown
   [element]
   (if (string? element)
-    (string/trim element)
+    (-> (string/trim element)
+        (string/replace "&amp;" "&"))
     (let [[tag attribs & content] element
           md-content #(apply str (map as-markdown content))]
       (cond
@@ -52,7 +53,9 @@
         (= tag :span) (md-content)
         (= tag :br) new-line
         (= tag :p) (str (md-content) new-section)
-        (= tag :a) (link (md-content) (:href attribs))
+        (= tag :a) (if (:href attribs)
+                     (link (md-content) (:href attribs))
+                     (md-content))
         (= tag :img) (image (:src attribs))
         (= tag :strong) (apply str (map (comp bold as-markdown) content))
         (= tag :b) (apply str (map (comp bold as-markdown) content))
