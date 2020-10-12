@@ -5,7 +5,8 @@
             [hc-scraper.web :refer [load-hiccup parse-html search-all search]]
             [clojure.data.json :as json]
             [clojure.string :as string]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io])
+  (:import [java.time LocalDateTime]))
 
 
 (def trello-data (clojure.edn/read-string (slurp "trello-humble-board-data.edn")))
@@ -122,6 +123,12 @@
     (create-delivery-method-label delivery-method)))
 
 
+(defn ^:private one-of [m & keys]
+  (when keys
+    (or (get m (first keys))
+        (recur m (next keys)))))
+
+
 (defn process-url!
   [choice-month-url upload?]
   (if (nil? choice-month-url)
@@ -136,7 +143,7 @@
           choice-month (:title data)
           games (-> data
                     :contentChoiceData
-                    :initial
+                    (one-of :initial :initial-without-order)
                     :content_choices)]
       (if (not games)
         (println "No Humble Choice games found. Is the URL correct?")
@@ -168,8 +175,9 @@
 (comment
 
   ;; load humble choice games for the given month and year
-  (let [month "february"
-        year 2020
+  (let [now (LocalDateTime/now)
+        month (-> now .getMonth .name .toLowerCase)
+        year (-> now .getYear)
         upload-to-trello? true]
     (process-url! (str "https://www.humblebundle.com/subscription/" month "-" year) upload-to-trello?))
 
@@ -181,6 +189,9 @@
        (map :id)
        (mapv trello/delete-card!)
        empty?)
+
+  ;; sort all lists
+  (trello/sort-all-lists! board-id)
   )
 
 
