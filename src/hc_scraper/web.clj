@@ -81,8 +81,8 @@
   (println "Start downloading" f " - "
            (-> @(http/request {:method :head :url url}) :headers :content-length
                Long/parseLong
-               (quot 1000000))
-           "MB")
+               (quot 1000))
+           "kB")
   (with-open [in (:body @(http/request {:url url :as :stream}))
               out (io/output-stream f)]
     (io/copy in out))
