@@ -122,7 +122,7 @@
       ;; create directories if necessary
       (let [thumbnails-dir (File. (str base-dir "/thumbnails/"))
             data-dir (File. (str base-dir "/data/"))]
-        (when (and store-thumbnail? (.exists thumbnails-dir))
+        (when (and store-thumbnail? (not (.exists thumbnails-dir)))
           (.mkdirs thumbnails-dir))
         (when-not (.exists data-dir)
           (.mkdirs data-dir)))
