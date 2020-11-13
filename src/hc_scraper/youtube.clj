@@ -1,5 +1,5 @@
 (ns hc-scraper.youtube
-  (:require [hc-scraper.web :refer [load-hiccup parse-html search-all search download]]
+  (:require [hc-scraper.web :refer [load-html parse-html search-all search download]]
             [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.java.io :as io])
@@ -48,7 +48,6 @@
 
 (defn ^:private extract-video-json-data
   [video-page]
-  #_(spit "vid.edn" (with-out-str (clojure.pprint/pprint video-page)))
   (when-let [initial-data (some-> (find-data-script-tag video-page)
                                   (extract-initial-data-text)
                                   (json/read-str :key-fn keyword))]
@@ -67,52 +66,55 @@
 
 (defn ^:private extract-likes-and-dislikes
   [video-render-data]
-  (let [like-dislike-tooltip (-> video-render-data :videoPrimaryInfoRenderer :sentimentBar :sentimentBarRenderer :tooltip)
-        like-dislike-strings (string/split like-dislike-tooltip #" / ")]
-    (->> like-dislike-strings
+  (if-let [like-dislike-tooltip (-> video-render-data :videoPrimaryInfoRenderer :sentimentBar :sentimentBarRenderer :tooltip)]
+    (->> (string/split like-dislike-tooltip #" / ")
          (mapv #(string/replace % "." ""))                  ;; remove thousand-delimiters
-         (mapv #(Long/parseLong %)))))
+         (mapv #(Long/parseLong %)))
+    [0 0]))
 
 
 (defn ^:private fetch-data
   [video-url retries]
-  (let [video-page (load-hiccup video-url)
-        video-render-data (extract-video-json-data video-page)]
+  (let [video-page-html (load-html video-url)
+        video-page-hiccup (parse-html video-page-html)
+        video-render-data (extract-video-json-data video-page-hiccup)]
     (if (and (nil? video-render-data)
              (> retries 0))
       (recur video-url (dec retries))
-      [video-page video-render-data])))
+      [video-page-html video-page-hiccup video-render-data])))
 
 
 (defn load-video-data
+  "Loads and returns the video data, as well as the raw video page html"
   [relative-video-url]
   (let [end (or (string/index-of relative-video-url "&")
                 (count relative-video-url))
         video-id (subs relative-video-url (count "/watch?v=") end)
         video-url (str "https://www.youtube.com" relative-video-url)
-        [video-page video-render-data] (fetch-data video-url 4)
+        [raw-html video-page video-render-data] (fetch-data video-url 4)
         [likes dislikes] (extract-likes-and-dislikes video-render-data)]
-    {:id                video-id
-     :name              (find-meta video-page "name")
-     :channel           (find-channel-name video-page)
-     :video-render-data video-render-data
-     :cut-description   (find-meta video-page "description")
-     :description       (extract-full-description video-render-data)
-     :url               video-url
-     :thumbnail-url     (thumbnail-url video-page)
-     :views             (some-> (find-meta video-page "interactionCount")
-                                Long/parseLong)
-     :publish-date      (find-meta video-page "datePublished")
-     :upload-date       (find-meta video-page "uploadDate")
-     :playtime          (find-meta video-page "duration")
-     :likes             likes
-     :dislikes          dislikes
-     :scrape-time       (java.util.Date.)}))
+    [{:id                video-id
+      :name              (find-meta video-page "name")
+      :channel           (find-channel-name video-page)
+      :video-render-data video-render-data
+      :cut-description   (find-meta video-page "description")
+      :description       (extract-full-description video-render-data)
+      :url               video-url
+      :thumbnail-url     (thumbnail-url video-page)
+      :views             (some-> (find-meta video-page "interactionCount")
+                                 Long/parseLong)
+      :publish-date      (find-meta video-page "datePublished")
+      :upload-date       (find-meta video-page "uploadDate")
+      :playtime          (find-meta video-page "duration")
+      :likes             likes
+      :dislikes          dislikes
+      :scrape-time       (java.util.Date.)}
+     raw-html]))
 
 
 (defn store-video-data
   [relative-video-url base-dir channel-name store-thumbnail?]
-  (let [data (load-video-data relative-video-url)
+  (let [[data raw-html] (load-video-data relative-video-url)
         file-id (str (:publish-date data) " " (:id data))]
     ;; small sanity check
     (when (and base-dir
@@ -121,9 +123,12 @@
                    (= (:channel data) channel-name)))
       ;; create directories if necessary
       (let [thumbnails-dir (File. (str base-dir "/thumbnails/"))
+            raw-dir (File. (str base-dir "/raw/"))
             data-dir (File. (str base-dir "/data/"))]
         (when (and store-thumbnail? (not (.exists thumbnails-dir)))
           (.mkdirs thumbnails-dir))
+        (when-not (.exists raw-dir)
+          (.mkdirs raw-dir))
         (when-not (.exists data-dir)
           (.mkdirs data-dir)))
       ;; download thumbnail
@@ -131,6 +136,10 @@
         (if (:thumbnail-url data)
           (download (:thumbnail-url data) (str base-dir "/thumbnails/" file-id ".jpg"))
           (spit (str base-dir "/thumbnails/" file-id " missing.txt") "")))
+      ;; store page html
+      (let [file-path (str base-dir "/raw/" file-id ".html")]
+        (spit file-path raw-html)
+        (println "Created" file-path " - " (-> file-path io/as-file .length (quot 1000)) "kB"))
       ;; store data as edn
       (let [file-path (str base-dir "/data/" file-id ".edn")]
         (spit file-path (with-out-str (clojure.pprint/pprint data)))

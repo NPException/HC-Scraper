@@ -66,11 +66,17 @@
        first))
 
 
-(defn load-hiccup [url]
+(defn load-html [url]
   (some->
     (http/request {:method :get :url url})
     deref
-    :body
+    :body))
+
+
+(defn load-hiccup [url]
+  (some->
+    url
+    load-html
     parse-html))
 
 
