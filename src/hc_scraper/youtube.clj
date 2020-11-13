@@ -101,8 +101,13 @@
       :description       (extract-full-description video-render-data)
       :url               video-url
       :thumbnail-url     (thumbnail-url video-page)
-      :views             (some-> (find-meta video-page "interactionCount")
+      ;; equal to views for videos. For live streams this represents some other value.
+      :interaction-count (some-> (find-meta video-page "interactionCount")
                                  Long/parseLong)
+      :views-text        (let [view-count-data (-> video-render-data :videoPrimaryInfoRenderer :viewCount :videoViewCountRenderer :viewCount)
+                               video-view-count (:simpleText view-count-data)
+                               stream-view-count (-> view-count-data :runs first :text)]
+                           (or video-view-count stream-view-count))
       :publish-date      (find-meta video-page "datePublished")
       :upload-date       (find-meta video-page "uploadDate")
       :playtime          (find-meta video-page "duration")
