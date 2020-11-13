@@ -14,10 +14,16 @@
 (def upload-list-id (:upload-list-id trello-data))
 
 
+(defn ^:private print-flush [& args]
+  (apply print args)
+  (flush))
+
+
 (defn ^:private fetch-steam-url
   "Queries steamdb.info for the game title, and returns the first store page link found.
   If the game comes with DLCs the title is cleaned up if possible."
   [title]
+  (print-flush " - Searching for Steam Page URL... ")
   (let [clean-title (or (second (re-matches #"(.*?)( \+ \d+ DLCs?)$" title))
                         title)
         encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
@@ -35,10 +41,12 @@
                         first)
         easy-guess (first candidate)
         [_ {:keys [data-appid]}] (or match best-guess easy-guess)]
-    (when data-appid
+    (println (if data-appid "OK" "Failed"))
+    (if data-appid
       (md/link
         (str "Steam Page" (when-not match " (?)"))
-        (str "https://store.steampowered.com/app/" data-appid)))))
+        (str "https://store.steampowered.com/app/" data-appid))
+      (md/link "Steam Page (NOT FOUND)" ""))))
 
 
 (defn ^:private upload-to-trello!
@@ -48,13 +56,9 @@
                                        :description description
                                        :image-url image-url
                                        :label-ids label-ids)]
-    (trello/add-comment! (:id card) yt-url)
+    (when yt-url
+      (trello/add-comment! (:id card) yt-url))
     :ok))
-
-
-(defn ^:private print-flush [& args]
-  (apply print args)
-  (flush))
 
 
 (defn ^:private process-game! [data trello-labels]
@@ -62,7 +66,11 @@
         _ (println "Next:" title)
         genres (string/join ", " (:genres data))
         developers (string/join ", " (:developers data))
-        yt-url (str "https://www.youtube.com/watch?v=" (-> data :carousel_content :youtube-link first))
+        yt-url (some->> data :carousel_content :youtube-link first
+                        (str "https://www.youtube.com/watch?v="))
+        md-yt-link (if yt-url
+                     (md/link "Youtube Trailer" yt-url)
+                     (md/link "Youtube Trailer (NOT FOUND)" nil))
         choice-url (:choice-url data)
         image-url (:image data)
         description (-> (:description data)
@@ -73,15 +81,13 @@
                                     parse-html
                                     (search :body nil)
                                     md/as-markdown)
-        _ (print-flush " - Searching for Steam Page URL... ")
         md-steam-link (fetch-steam-url title)
-        _ (println (if md-steam-link "OK" "Failed"))
         description-md (str
                          "Genres: " (md/italic genres) md/new-line
                          "Developers: " (md/bold developers)
                          md/new-section
                          (md/bold
-                           (str md-steam-link " | " (md/link "Youtube Trailer" yt-url) " | " (md/link "Humble Choice Link" choice-url)))
+                           (str md-steam-link " | " md-yt-link " | " (md/link "Humble Choice Link" choice-url)))
                          md/new-section
                          "-----"
                          md/new-section
