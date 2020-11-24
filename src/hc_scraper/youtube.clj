@@ -123,7 +123,8 @@
         file-id (str (:publish-date data) " " (:id data))]
     ;; small sanity check
     (when (and base-dir
-               (-> base-dir File. .isDirectory)
+               (or (-> base-dir File. .isDirectory)
+                   (-> base-dir File. .mkdirs))
                (or (nil? channel-name)
                    (= (:channel data) channel-name)))
       ;; create directories if necessary
