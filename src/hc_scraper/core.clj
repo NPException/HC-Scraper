@@ -6,7 +6,7 @@
             [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.java.io :as io])
-  (:import [java.time LocalDateTime]))
+  (:import (java.time LocalDateTime)))
 
 
 (def trello-data (clojure.edn/read-string (slurp "trello-humble-board-data.edn")))
@@ -177,6 +177,29 @@
   (process-url! choice-url true))
 
 
+
+(defn transfer-cards-from-upload-list!
+  []
+  (let [list-ids (->> (trello/all-lists board-id)
+                      (filter #(= 1 (count (:name %))))
+                      (map (juxt (comp first string/lower-case :name)
+                                 :id))
+                      (into {}))
+        ; add fake keys for digits
+        list-ids (->> (range 10)
+                      (map (juxt (comp first str)
+                                 (constantly (list-ids \#))))
+                      (into list-ids))
+        find-target-list (fn [{:keys [name]}]
+                           (-> (trello/make-sortable name)
+                               (string/replace-first #"[äöü]" {"ä" "a", "ö" "o", "ü" "u"})
+                               first
+                               list-ids))]
+    (->> (trello/get-cards upload-list-id [:name])
+         (map (juxt find-target-list identity))
+         (mapv #(apply trello/sort-card-into-list! %)))))
+
+
 ;; functions for REPL evaluation
 (comment
 
@@ -185,21 +208,22 @@
         month (-> now .getMonth .name .toLowerCase)
         year (-> now .getYear)
         upload-to-trello? true]
-    (process-url! (str "https://www.humblebundle.com/subscription/" month "-" year) upload-to-trello?))
+    (process-url!
+      (str "https://www.humblebundle.com/subscription/" month "-" year)
+      upload-to-trello?))
 
-  ;; sorts the "NEU" list
+  ;; sorts the "NEW" list
   (trello/sort-list! upload-list-id)
 
-  ;; delete all cards in "NEU"
+  ;; delete all cards in "NEW"
   (->> (trello/get-cards upload-list-id [:id])
        (map :id)
        (mapv trello/delete-card!)
        empty?)
 
+  ;; move cards from "NEW" to lists
+  (transfer-cards-from-upload-list!)
+
   ;; sort all lists
   (trello/sort-all-lists! board-id)
   )
-
-
-;; TODO: Transfer cards from "NEU" to their apropriate lists,
-;; TODO:  either into their sorted position, or sort the list afterwards.

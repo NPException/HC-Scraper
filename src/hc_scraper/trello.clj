@@ -2,9 +2,9 @@
   (:require [org.httpkit.client :as http]
             [clojure.data.json :as json]
             [clojure.string :as string])
-  (:import [java.text Collator]
-           [java.util Locale Date]
-           [java.util.concurrent LinkedBlockingQueue]))
+  (:import (java.text Collator)
+           (java.util Locale Date)
+           (java.util.concurrent LinkedBlockingQueue)))
 
 (def ^:private api-url "https://api.trello.com/1")
 
@@ -41,7 +41,7 @@
                           :url       url
                           param-type (merge params auth)}
                          (fn [result]
-                           (when (or (case (:status result)
+                           (when (or (case (int (:status result))
                                        (200 429) false
                                        true)
                                      (:error result))
@@ -115,6 +115,76 @@
                             (string/join ","))}))))
 
 
+(defn ^:private trim-articles
+  [name]
+  (cond
+    (string/starts-with? name "the ") (subs name 4)
+    (string/starts-with? name "a ") (subs name 2)
+    :else name))
+
+
+(defn make-sortable
+  "Transforms the given title to a format that can be used for alphabetical sorting."
+  ^String [title]
+  (->> title
+       string/lower-case
+       string/trim
+       trim-articles
+       (re-seq #"\w|[äöü]")
+       string/join))
+
+
+(def ^:private collator (Collator/getInstance Locale/GERMANY))
+
+(defn ^:private compare-cards-by-name
+  [{name-1 :name} {name-2 :name}]
+  (.compare ^Collator collator
+            (make-sortable name-1)
+            (make-sortable name-2)))
+
+
+(defn ^:private difference
+  [n1 n2]
+  (if (> n1 n2)
+    (- n1 n2)
+    (- n2 n1)))
+
+
+(defn ^:private determine-position
+  "Calculates the position a card with the given name
+  would take in the desired list. This is assuming that the cards
+  in the Trello list are already alphabetically sorted."
+  [list-id-or-cards card]
+  (let [cards (some->> (if (string? list-id-or-cards)
+                         (get-cards list-id-or-cards [:name :pos])
+                         list-id-or-cards)
+                       (sort-by :pos))
+        first-card (first cards)
+        last-card (last cards)]
+    (cond
+      (empty? cards) 0
+
+      ;; less than first card
+      (< (compare-cards-by-name card first-card) 0)
+      (let [first-pos (:pos first-card)]
+        (- first-pos (/ (difference Integer/MIN_VALUE first-pos) 2.0)))
+
+      ;; more than last card
+      (>= (compare-cards-by-name card last-card) 0)
+      (let [last-pos (:pos last-card)]
+        (+ last-pos (/ (difference last-pos Integer/MAX_VALUE) 2.0)))
+
+      :somewhere-else
+      (->> cards
+           (map #(vector (compare-cards-by-name card %) (:pos %)))
+           (partition 2 1)
+           (map (fn [[[c1 pos1] [c2 pos2]]]
+                  (when (not= c1 c2)
+                    (+ pos1 (/ (difference pos1 pos2) 2.0)))))
+           (filter some?)
+           first))))
+
+
 (defn create-card!
   "Creates a card with the given name in the list.
   Rest of the parameters are optional."
@@ -150,34 +220,30 @@
     {:text text}))
 
 
-(defn ^:private trim-articles
-  [name]
-  (cond
-    (string/starts-with? name "the ") (subs name 4)
-    (string/starts-with? name "a ") (subs name 2)
-    :else name))
-
-(defn ^:private make-sortable
-  [title]
-  (->> title
-       string/lower-case
-       string/trim
-       trim-articles
-       (re-seq #"\w|[äöü]")
-       string/join))
-
-
 (defn sort-list!
   "Sorts a list by card titles in ascending alphabetic order,
   while ignoring leading articles ('a' & 'the')."
   [list-id]
   (some->>
     (get-cards list-id [:name :id])
-    (sort-by (comp make-sortable :name) (Collator/getInstance Locale/GERMANY))
+    (sort compare-cards-by-name)
     (map-indexed (fn [idx {id :id}]
                    (api-put ["cards" id] {:pos (* idx 10000)} true)))
     doall)
   nil)
+
+
+(defn sort-card-into-list!
+  "Moves a given card into the desired list.
+
+  If if the cards in the target list are supplied via 'cards-in-list'
+  (with :name and :pos fields), they will be used to determine the new position,
+  instead of querrying Trello for the cards in the list."
+  [list-id card & {:keys [cards-in-list]}]
+  (let [new-data {:idList list-id
+                  :pos    (determine-position (or cards-in-list list-id) card)}]
+    (api-put ["cards" (:id card)] new-data false)
+    (merge card new-data)))
 
 
 (defn all-lists

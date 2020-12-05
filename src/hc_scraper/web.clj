@@ -3,7 +3,8 @@
             [clojure.java.io :as io]
             [org.httpkit.sni-client :as sni-client]
             [org.httpkit.client :as http])
-  (:import [java.util Map]))
+  (:import (java.util Map)
+           (java.io Closeable)))
 
 (alter-var-root #'org.httpkit.client/*default-client* (fn [_] sni-client/default-client))
 
@@ -89,7 +90,7 @@
                Long/parseLong
                (quot 1000))
            "kB")
-  (with-open [in (:body @(http/request {:url url :as :stream}))
+  (with-open [^Closeable in (:body @(http/request {:url url :as :stream}))
               out (io/output-stream f)]
     (io/copy in out))
   (println "Finished downloading" f)
