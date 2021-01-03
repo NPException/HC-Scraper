@@ -166,13 +166,11 @@
 
       ;; less than first card
       (< (compare-cards-by-name card first-card) 0)
-      (let [first-pos (:pos first-card)]
-        (- first-pos (/ (difference Integer/MIN_VALUE first-pos) 2.0)))
+      "top"
 
       ;; more than last card
       (>= (compare-cards-by-name card last-card) 0)
-      (let [last-pos (:pos last-card)]
-        (+ last-pos (/ (difference last-pos Integer/MAX_VALUE) 2.0)))
+      "bottom"
 
       :somewhere-else
       (->> cards
@@ -228,7 +226,7 @@
     (get-cards list-id [:name :id])
     (sort compare-cards-by-name)
     (map-indexed (fn [idx {id :id}]
-                   (api-put ["cards" id] {:pos (* idx 10000)} true)))
+                   (api-put ["cards" id] {:pos (* (inc idx) 10000)} true)))
     doall)
   nil)
 
