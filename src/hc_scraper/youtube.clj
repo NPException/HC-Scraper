@@ -3,7 +3,8 @@
             [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.java.io :as io])
-  (:import (java.io File)))
+  (:import (java.io File)
+           (java.util Date)))
 
 
 (defn ^:private find-attribute
@@ -113,7 +114,7 @@
       :playtime          (find-meta video-page "duration")
       :likes             likes
       :dislikes          dislikes
-      :scrape-time       (java.util.Date.)}
+      :scrape-time       (Date.)}
      raw-html]))
 
 
@@ -123,8 +124,8 @@
         file-id (str (:publish-date data) " " (:id data))]
     ;; small sanity check
     (when (and base-dir
-               (or (-> base-dir File. .isDirectory)
-                   (-> base-dir File. .mkdirs))
+               (or (-> base-dir io/file .isDirectory)
+                   (-> base-dir io/file .mkdirs))
                (or (nil? channel-name)
                    (= (:channel data) channel-name)))
       ;; create directories if necessary
@@ -145,8 +146,61 @@
       ;; store page html
       (let [file-path (str base-dir "/raw/" file-id ".html")]
         (spit file-path raw-html)
-        (println "Created" file-path " - " (-> file-path io/as-file .length (quot 1000)) "kB"))
+        (println "Created" file-path " - " (-> file-path io/file .length (quot 1000)) "kB"))
       ;; store data as edn
       (let [file-path (str base-dir "/data/" file-id ".edn")]
         (spit file-path (with-out-str (clojure.pprint/pprint data)))
-        (println "Created" file-path " - " (-> file-path io/as-file .length (quot 1000)) "kB")))))
+        (println "Created" file-path " - " (-> file-path io/file .length (quot 1000)) "kB")))))
+
+
+
+(comment
+  ;; This is assuming you saved the source of a YT channel page to a file from your browser, where
+  ;; you scrolled far enough to have all videos visible that you want to scrape data for.
+  ;; Just making a request to the channel page won't work, because it doesn't load all the videos.
+  (defonce channel-page (parse-html (slurp "some-channel-page-source.html")))
+  (def channel-name "Mr Beast")
+
+  ;; store data for all videos of a channel without thumbnails
+  (let [base-dir (str "~/youtube-data/_VID_META_" (System/currentTimeMillis))]
+    (-> base-dir java.io.File. .mkdirs)
+    (time (->> (search-all channel-page :a {:id "video-title"})
+               (pmap #(store-video-data (:href (nth % 1))
+                                        base-dir
+                                        channel-name
+                                        false))
+               dorun)))
+
+  ;; store data for all videos one thread for each. don't over-use! might get rate limited.
+  (let [base-dir (str "~/youtube-data/_VID_META_" (System/currentTimeMillis))]
+    (-> base-dir java.io.File. .mkdirs)
+    (time (->> (search-all channel-page :a {:id "video-title"})
+               (mapv #(future (store-video-data (:href (nth % 1))
+                                                base-dir
+                                                channel-name
+                                                false)))
+               (map deref)
+               dorun)))
+
+  (defn relative-url-from-clipboard
+    []
+    (let [url (-> (java.awt.Toolkit/getDefaultToolkit)
+                  (.getSystemClipboard)
+                  (.getData java.awt.datatransfer.DataFlavor/stringFlavor))]
+      ;; sanity check
+      (java.net.URL. url)
+      (subs url (string/last-index-of url "/"))))
+
+  ;; load video data from url in clipboard and bind to var
+  (def video-data (first (load-video-data (relative-url-from-clipboard))))
+
+  ;; store video data from video url in clipboard
+  (try
+    (store-video-data (relative-url-from-clipboard)
+                      "~/youtube-data/other"
+                      nil
+                      true)
+    (catch Exception e
+      (.printStackTrace e)))
+
+  )
