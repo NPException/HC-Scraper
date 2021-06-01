@@ -210,7 +210,8 @@
         upload-to-trello? true]
     (process-url!
       (str "https://www.humblebundle.com/subscription/" month "-" year)
-      upload-to-trello?))
+      upload-to-trello?)
+    (trello/sort-list! upload-list-id))
 
   ;; sorts the "NEW" list
   (trello/sort-list! upload-list-id)
