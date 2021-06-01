@@ -40,11 +40,25 @@
 (defn heading [level x]
   (str "\n" (apply str (repeat level "#")) " " x "\n"))
 
+
+(def ^:private known-entities
+  {"&nbsp;" " "
+   "&amp;" "&"
+   "&quot;" "\""
+   "&lt;" "<"
+   "&gt;" ">"})
+
+(def ^:private known-entities-regex
+  (->> known-entities
+       (map key)
+       (string/join "|")
+       re-pattern))
+
 (defn as-markdown
   [element]
   (if (string? element)
-    (-> (string/trim element)
-        (string/replace "&amp;" "&"))
+    (-> (string/replace element known-entities-regex #(known-entities % %))
+        (string/trim))
     (let [[tag attribs & content] element
           md-content #(apply str (map as-markdown content))]
       (cond
