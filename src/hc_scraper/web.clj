@@ -44,11 +44,11 @@
     (let [match? (and (or (nil? target-tag) (= (tag element) target-tag))
                       (submap? target-attribs (attribs element) case-sensitive?))]
       (loop [children (body element)
-             results (if match? (cons element nil) '())]
+             results (if match? [element] [])]
         (if (empty? children)
           results
           (recur (rest children)
-                 (concat results (search-all (first children) target-tag target-attribs case-sensitive?))))))))
+                 (into results (search-all (first children) target-tag target-attribs case-sensitive?))))))))
 
 
 (defn search
