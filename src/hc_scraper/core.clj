@@ -19,34 +19,52 @@
   (flush))
 
 
+(defn ^:private fuzzy-title
+  "Replaces some known culprit characters with there expected variants"
+  [s]
+  (-> (string/lower-case s)
+      (string/replace \– \-)))
+
+(defn ^:private matches-title?
+  [title candidate-row]
+  (->> (drop 2 candidate-row)                               ;; check children of :tr tag
+       (filter vector?)                                     ;; only check child html tags
+       (#(nth % 2))                                         ;; 3rd column
+       (drop 2)                                             ;; drop tag and attrib map of [:td {} ...]
+       (filter string?)                                     ;; only check trimmed strings
+       (map string/trim)
+       (some #(or (= % title)
+                  (= (fuzzy-title %) (fuzzy-title title))))))
+
+
 (defn ^:private fetch-steam-url
   "Queries steamdb.info for the game title, and returns the first store page link found.
   If the game comes with DLCs the title is cleaned up if possible."
   [title]
   (print-flush " - Searching for Steam Page URL... ")
-  (let [clean-title (or (second (re-matches #"(.*?)( \+ \d+ DLCs?)$" title))
+  (let [clean-title (or (second (re-matches #"(.*?)( \+ [\w ]+ DLC[s*]?)$" title))
                         title)
         encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
         html (load-hiccup (str "https://steamdb.info/search/?a=app&type=1&category=0&q=" encoded-title))
-        candidate (search-all html :tr {:class "app"} true)
-        match (->> candidate
-                   (filter #(contains? (set %) [:td {} clean-title]))
+        candidates (search-all html :tr {:class "app"} true)
+        match (->> candidates
+                   (filter #(matches-title? clean-title %))
                    first)
-        best-guess (->> candidate
+        best-guess (->> candidates
                         ;; game name is at index 7 in :tr element
                         (filter #(let [[_ _ name] (nth % 7)]
                                    (string/starts-with?
                                      (string/lower-case name)
                                      (string/lower-case clean-title))))
                         first)
-        easy-guess (first candidate)
+        easy-guess (first candidates)
         [_ {:keys [data-appid]}] (or match best-guess easy-guess)]
     (println (if data-appid "OK" "Failed"))
     (if data-appid
       (md/link
-        (str "Steam Page" (when-not match " (?)"))
+        (str "Steam Page" (when-not match " ?"))
         (str "https://store.steampowered.com/app/" data-appid))
-      (md/link "Steam Page (NOT FOUND)" ""))))
+      (md/link "Steam Page NOT FOUND" ""))))
 
 
 (defn ^:private upload-to-trello!
@@ -70,7 +88,7 @@
                         (str "https://www.youtube.com/watch?v="))
         md-yt-link (if yt-url
                      (md/link "Youtube Trailer" yt-url)
-                     (md/link "Youtube Trailer (NOT FOUND)" nil))
+                     (md/link "Youtube Trailer NOT FOUND" nil))
         choice-url (:choice-url data)
         image-url (:image data)
         description (-> (:description data)
@@ -203,15 +221,19 @@
 ;; functions for REPL evaluation
 (comment
 
+  (defn fetch! [upload-to-trello?]
+    (let [now (LocalDateTime/now)
+          month (-> now .getMonth .name .toLowerCase)
+          year (-> now .getYear)]
+      (process-url!
+        (str "https://www.humblebundle.com/subscription/" month "-" year)
+        upload-to-trello?)
+      (trello/sort-list! upload-list-id)))
+
   ;; load humble choice games for the given month and year
-  (let [now (LocalDateTime/now)
-        month (-> now .getMonth .name .toLowerCase)
-        year (-> now .getYear)
-        upload-to-trello? true]
-    (process-url!
-      (str "https://www.humblebundle.com/subscription/" month "-" year)
-      upload-to-trello?)
-    (trello/sort-list! upload-list-id))
+  (fetch! true)
+
+  (fetch! false)
 
   ;; sorts the "NEW" list
   (trello/sort-list! upload-list-id)
