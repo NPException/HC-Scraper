@@ -155,11 +155,8 @@
   "Calculates the position a card with the given name
   would take in the desired list. This is assuming that the cards
   in the Trello list are already alphabetically sorted."
-  [list-id-or-cards card]
-  (let [cards (some->> (if (string? list-id-or-cards)
-                         (get-cards list-id-or-cards [:name :pos])
-                         list-id-or-cards)
-                       (sort-by :pos))
+  [cards card]
+  (let [cards (sort-by :pos cards)
         first-card (first cards)
         last-card (last cards)]
     (cond
@@ -236,10 +233,11 @@
   "Moves a given card into the desired list.
   If the cards in the target list are supplied via 'cards-in-list'
   (with :name and :pos fields), they will be used to determine the new position,
-  instead of querrying Trello for the cards in the list."
+  instead of querying Trello for the cards in the list."
   [list-id card & {:keys [cards-in-list]}]
-  (let [new-data {:idList list-id
-                  :pos    (determine-position (or cards-in-list list-id) card)}
+  (let [cards-in-list (or cards-in-list (get-cards list-id [:name :pos]))
+        new-data {:idList list-id
+                  :pos    (determine-position cards-in-list card)}
         updated-card (api-put ["cards" (:id card)] new-data false)]
     (merge card (select-keys updated-card [:idList :pos]))))
 
