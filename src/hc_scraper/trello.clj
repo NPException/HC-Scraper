@@ -54,7 +54,8 @@
                                  (.put request-queue execute-request))
                              (deliver response result)))))]
     (.put request-queue make-request)
-    (when-not async?
+    (if async?
+      response
       (let [success? (= 200 (:status @response))]
         (if (and parse-response? success?)
           (json/read-str (:body @response) :key-fn keyword)
@@ -72,7 +73,7 @@
 
 (defn api-put
   [path-seq params async?]
-  (api-request :put :form-params false async? path-seq params))
+  (api-request :put :form-params true async? path-seq params))
 
 (defn api-delete
   [path-seq async?]
@@ -233,15 +234,14 @@
 
 (defn sort-card-into-list!
   "Moves a given card into the desired list.
-
-  If if the cards in the target list are supplied via 'cards-in-list'
+  If the cards in the target list are supplied via 'cards-in-list'
   (with :name and :pos fields), they will be used to determine the new position,
   instead of querrying Trello for the cards in the list."
   [list-id card & {:keys [cards-in-list]}]
   (let [new-data {:idList list-id
-                  :pos    (determine-position (or cards-in-list list-id) card)}]
-    (api-put ["cards" (:id card)] new-data false)
-    (merge card new-data)))
+                  :pos    (determine-position (or cards-in-list list-id) card)}
+        updated-card (api-put ["cards" (:id card)] new-data false)]
+    (merge card (select-keys updated-card [:idList :pos]))))
 
 
 (defn all-lists
