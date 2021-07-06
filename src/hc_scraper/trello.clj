@@ -21,13 +21,13 @@
 
 (defonce ^LinkedBlockingQueue request-queue (LinkedBlockingQueue.))
 (defonce request-runner
-         (future
-           (while true
-             (let [request-fn (.take request-queue)]
-               (when (> @rate-limit 0)
-                 (Thread/sleep rate-limit-sleep)
-                 (swap! rate-limit dec))
-               (request-fn)))))
+  (future
+    (while true
+      (let [request-fn (.take request-queue)]
+        (when (> @rate-limit 0)
+          (Thread/sleep rate-limit-sleep)
+          (swap! rate-limit dec))
+        (request-fn)))))
 
 
 

@@ -25,45 +25,52 @@
   (-> (string/lower-case s)
       (string/replace \– \-)))
 
+(defn ^:private extract-game-title
+  [candidate-row]
+  (->> (search candidate-row :span {:class "title"})
+       (drop 2)
+       (filter string?)
+       (map string/trim)
+       (remove string/blank?)
+       first))
+
 (defn ^:private matches-title?
   [title candidate-row]
-  (->> (drop 2 candidate-row)                               ;; check children of :tr tag
-       (filter vector?)                                     ;; only check child html tags
-       (#(nth % 2))                                         ;; 3rd column
-       (drop 2)                                             ;; drop tag and attrib map of [:td {} ...]
-       (filter string?)                                     ;; only check trimmed strings
-       (map string/trim)
-       (some #(or (= % title)
-                  (= (fuzzy-title %) (fuzzy-title title))))))
-
+  (let [candidate-title (extract-game-title candidate-row)]
+    (or (= candidate-title title)
+        (= (fuzzy-title candidate-title)
+           (fuzzy-title title)))))
 
 (defn ^:private fetch-steam-url
-  "Queries steamdb.info for the game title, and returns the first store page link found.
+  "Queries Steam for the game title, and returns the first store page link found.
   If the game comes with DLCs the title is cleaned up if possible."
   [title]
   (print-flush " - Searching for Steam Page URL... ")
   (let [clean-title (or (second (re-matches #"(.*?)( \+ [\w ]+ DLC[s*]?)$" title))
                         title)
         encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
-        html (load-hiccup (str "https://steamdb.info/search/?a=app&type=1&category=0&q=" encoded-title))
-        candidates (search-all html :tr {:class "app"} true)
+        html (load-hiccup (str "https://store.steampowered.com/search/?category1=998&term=" encoded-title))
+        candidates (search-all html :a {:data-search-page "1"} true)
         match (->> candidates
                    (filter #(matches-title? clean-title %))
                    first)
         best-guess (->> candidates
-                        ;; game name is at index 7 in :tr element
-                        (filter #(let [[_ _ name] (nth % 7)]
+                        (filter #(let [name (extract-game-title %)]
                                    (string/starts-with?
                                      (string/lower-case name)
                                      (string/lower-case clean-title))))
                         first)
         easy-guess (first candidates)
-        [_ {:keys [data-appid]}] (or match best-guess easy-guess)]
-    (println (if data-appid "OK" "Failed"))
-    (if data-appid
+        [_ {:keys [href]}] (or match best-guess easy-guess)]
+    (println (cond
+               match "OK"
+               best-guess "Good guess"
+               easy-guess "Bad guess"
+               :else "Failed"))
+    (if href
       (md/link
         (str "Steam Page" (when-not match " ?"))
-        (str "https://store.steampowered.com/app/" data-appid))
+        (subs href 0 (string/last-index-of href "/")))
       (md/link "Steam Page NOT FOUND" ""))))
 
 
