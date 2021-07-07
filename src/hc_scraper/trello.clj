@@ -56,12 +56,12 @@
                                  (.put request-queue execute-request))
                              (deliver response result)))))]
     (.put request-queue make-request)
-    (if async?
-      response
-      (let [success? (= 200 (:status @response))]
-        (if (and parse-response? success?)
-          (json/read-str (:body @response) :key-fn keyword)
-          success?)))))
+    ((if async? identity deref)
+     (delay
+       (let [success? (= 200 (:status @response))]
+         (if (and parse-response? success?)
+           (json/read-str (:body @response) :key-fn keyword)
+           success?))))))
 
 
 
