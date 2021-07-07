@@ -198,8 +198,20 @@
                 (process-game! game-data trello-labels)))))))))
 
 
-(defn -main [& [choice-url]]
-  (process-url! choice-url true))
+(defn fetch-current-choice-bundle!
+  "Scrapes the humble choice games for the current month and year"
+  [upload-to-trello?]
+  (let [now (LocalDateTime/now)
+        month (-> now .getMonth .name .toLowerCase)
+        year (-> now .getYear)]
+    (process-url!
+      (str "https://www.humblebundle.com/subscription/" month "-" year)
+      upload-to-trello?)
+    (trello/sort-list! upload-list-id)))
+
+
+(defn -main [& _args]
+  (fetch-current-choice-bundle! true))
 
 
 
@@ -232,19 +244,9 @@
 ;; functions for REPL evaluation
 (comment
 
-  (defn fetch! [upload-to-trello?]
-    (let [now (LocalDateTime/now)
-          month (-> now .getMonth .name .toLowerCase)
-          year (-> now .getYear)]
-      (process-url!
-        (str "https://www.humblebundle.com/subscription/" month "-" year)
-        upload-to-trello?)
-      (trello/sort-list! upload-list-id)))
+  (fetch-current-choice-bundle! true)
 
-  ;; load humble choice games for the given month and year
-  (fetch! true)
-
-  (fetch! false)
+  (fetch-current-choice-bundle! false)
 
   ;; sorts the "NEW" list
   (trello/sort-list! upload-list-id)
