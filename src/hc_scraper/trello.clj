@@ -6,6 +6,8 @@
            (java.util Locale Date)
            (java.util.concurrent LinkedBlockingQueue)))
 
+;; TODO: split bare API functions and utility functions (like sorting) into separate namespaces
+
 (def ^:private api-url "https://api.trello.com/1")
 
 

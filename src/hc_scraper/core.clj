@@ -8,6 +8,10 @@
             [clojure.java.io :as io])
   (:import (java.time LocalDateTime)))
 
+;; TODO: automatically use first Trello list as NEW list
+;; TODO: create target list (#,A-Z) automatically when necessary and not yet present
+;; TODO: add function to create a board and store id to `trello-humble-board-data.edn`
+
 
 (def trello-data (clojure.edn/read-string (slurp "trello-humble-board-data.edn")))
 (def board-id (:board-id trello-data))
