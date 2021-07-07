@@ -222,7 +222,11 @@
                                list-ids))]
     (->> (trello/get-cards upload-list-id [:name])
          (map (juxt find-target-list identity))
-         (mapv #(apply trello/sort-card-into-list! %)))))
+         (reduce
+           (fn [card-lists [list-id card]]
+             (update card-lists list-id
+                     #(trello/sort-card-into-list! list-id card :cards-in-list %)))
+           {}))))
 
 
 ;; functions for REPL evaluation

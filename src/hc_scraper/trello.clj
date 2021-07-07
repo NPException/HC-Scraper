@@ -239,7 +239,8 @@
         new-data {:idList list-id
                   :pos    (determine-position cards-in-list card)}
         updated-card (api-put ["cards" (:id card)] new-data false)]
-    (merge card (select-keys updated-card [:idList :pos]))))
+    (conj cards-in-list
+          (assoc card :pos (:pos updated-card)))))
 
 
 (defn all-lists
