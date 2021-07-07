@@ -243,6 +243,17 @@
           (assoc card :pos (:pos updated-card)))))
 
 
+(defn get-list
+  "Gets the list with the given id, optionally only returning the desired fields.
+  Fields can be passed as a symbols, keywords or strings."
+  ([list-id]
+   (get-list list-id nil))
+  ([list-id fields]
+   (api-get ["lists" list-id]
+            (when (seq fields)
+              {:fields (->> fields (map name) (string/join ","))}))))
+
+
 (defn all-lists
   "Loads all lists from a board."
   [board-id]
