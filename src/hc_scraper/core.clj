@@ -9,8 +9,7 @@
   (:import (java.time LocalDateTime)
            (java.net URLEncoder)))
 
-;; TODO: automatically use first Trello list as NEW list
-;; TODO: create target list (#,A-Z) automatically when necessary and not yet present
+;; TODO: maybe store cards not in alphabetical columns, but in column per bundle instead
 ;; TODO: add function to create a board and store id to `trello-humble-board-data.edn`
 
 
@@ -151,7 +150,7 @@
   (let [file (str "./not-uploaded/" game-url-name ".md")
         enhanced-markdown (str
                             (md/heading 1 title) "\n"
-                            (md/image image-url) md/new-line
+                            (md/image nil image-url) md/new-line
                             md-description)]
     (io/make-parents file)
     (spit file enhanced-markdown)))
@@ -164,7 +163,7 @@
                              (map (juxt :name :id))
                              (into {})))
         find-label (and upload?
-                        (memoize #(find-delivery-method-label all-labels %)))]
+                        (memoize #(find-delivery-method-label all-labels (string/lower-case %))))]
     (doseq [game games]
       (println "Next:" (:title game))
       (let [{:keys [title image-url trailer-url]} game
@@ -179,11 +178,11 @@
 
 
 (defn process-humble-url!
-  [choice-month-url extract-data-fn upload?]
-  (if (nil? choice-month-url)
+  [humble-url extract-data-fn upload?]
+  (if (nil? humble-url)
     (println "Please supply a Humble choice month URL as parameter")
-    (let [_ (println "Making request to" choice-month-url)
-          html (web/load-hiccup choice-month-url)
+    (let [_ (println "Making request to" humble-url)
+          html (web/load-hiccup humble-url)
           {:keys [games trello-label-name]} (extract-data-fn html)]
       (if (not (seq games))
         (println "No games found. Is the URL correct?")
@@ -203,6 +202,15 @@
       (str "https://www.humblebundle.com/subscription/" month "-" year)
       humble/extract-choice-data
       upload-to-trello?)
+    (when upload-to-trello?
+      (trello/sort-list! upload-list-id))))
+
+
+(defn fetch-bundle!
+  "Scrapes a regular Humble bundle URL"
+  [url upload-to-trello?]
+  (process-humble-url! url humble/extract-bundle-data upload-to-trello?)
+  (when upload-to-trello?
     (trello/sort-list! upload-list-id)))
 
 
@@ -239,7 +247,7 @@
 ;; functions for REPL evaluation
 (comment
 
-  (process-humble-url! "https://www.humblebundle.com/games/sakura-series-bundle" humble/extract-bundle-data false)
+  (fetch-bundle! "https://www.humblebundle.com/games/sakura-series-bundle" true)
 
   (fetch-current-choice-bundle! true)
 

@@ -18,8 +18,8 @@
 (defn link [x url]
   (str "[" x "](" url ")"))
 
-(defn image [url]
-  (str "!" (link nil url)))
+(defn image [alt url]
+  (str "!" (link alt url)))
 
 (defn code [x]
   (if (string/blank? x)
@@ -70,7 +70,7 @@
         (= tag :a) (if (:href attribs)
                      (link (md-content) (:href attribs))
                      (md-content))
-        (= tag :img) (image (:src attribs))
+        (= tag :img) (image (:alt attribs) (:src attribs))
         (= tag :strong) (apply str (map (comp bold as-markdown) content))
         (= tag :b) (apply str (map (comp bold as-markdown) content))
         (= tag :em) (apply str (map (comp italic as-markdown) content))
@@ -90,7 +90,7 @@
                             first
                             second
                             :src
-                            image)
+                            (image "VIDEO"))
         (re-matches #"h(\d{1,2})" (name tag)) (let [[_ level] (re-matches #"h(\d{1,2})" (name tag))]
                                                 (heading (Integer/parseInt level) (md-content)))
         :unknown (code-section (pr-str element))))))

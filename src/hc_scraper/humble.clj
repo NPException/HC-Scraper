@@ -18,7 +18,7 @@
    }
   )
 
-(defn build-choice-game-data
+(defn ^:private build-choice-game-data
   ;; input in this case is a map entry from the games map
   [base-url [key data]]
   {:title (:title data)
@@ -54,3 +54,44 @@
                       :content_choices)]
     {:trello-label-name (str "HC " choice-month)
      :games (mapv #(build-choice-game-data base-url %) games-map)}))
+
+
+(defn ^:private extract-bundle-game-delivery-methods
+  [data]
+  (let [availability-data (:availability_icons data)
+        names-map (:human_names availability-data)
+        delivery-keys (keys (:delivery_to_platform availability-data))]
+    (mapv names-map delivery-keys)))
+
+(defn ^:private build-bundle-game-data
+  ;; input in this case is a map entry from the games map
+  [base-url logo-url bundle-name [_key data]]
+  {:title (:human_name data)
+   :game-url-name (:machine_name data)
+   ;; TODO: check future bundles for genre
+   :genres nil
+   :developers (mapv :developer-name (:developers data))
+   :delivery-methods (extract-bundle-game-delivery-methods data)
+   :trailer-url (some->> data :youtube_link
+                         (str "https://www.youtube.com/watch?v="))
+   :bundle-url (str base-url (:machine_name data))
+   :image-url (-> data :resolved_paths :featured_image)
+   :description-html (str
+                       (when logo-url
+                         (str "<img src=\"" logo-url "\" alt=\"" bundle-name "\"><br>"))
+                       (:description_text data))
+   ;; TODO: check future bundles for sys-requirements
+   :system-requirements-html nil})
+
+
+(defn extract-bundle-data
+  [page-hiccup]
+  (let [[_ _ json-data] (web/search page-hiccup :script {:id "webpack-bundle-page-data"} true)
+        raw-edn (json/read-str json-data :key-fn keyword)
+        bundle-data (:bundleData raw-edn)
+        bundle-name (-> bundle-data :basic_data :human_name)
+        base-url (str "https://www.humblebundle.com/" (:page_url bundle-data) "/")
+        logo-url (-> bundle-data :basic_data :logo)
+        games-map (:tier_item_data bundle-data)]
+    {:trello-label-name bundle-name
+     :games (mapv #(build-bundle-game-data base-url logo-url bundle-name %) games-map)}))
