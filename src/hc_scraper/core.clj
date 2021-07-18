@@ -92,16 +92,13 @@
     :ok))
 
 
-;; TODO: separate out markdown-creation to its own pure function
-(defn ^:private process-game!
-  [{:keys [title game-url-name genres developers
-           trailer-url bundle-url image-url
+(defn ^:private build-md-description
+  [{:keys [title genres developers
+           trailer-url bundle-url
            description-html system-requirements-html]
-    :as _data}
-   trello-labels]
-  (println "Next:" title)
-  (let [genres (some->> genres (string/join ", "))
-        developers (some->> developers (string/join ", "))
+    :as _game-data}]
+  (let [genre-text (some->> genres (string/join ", "))
+        developers-text (some->> developers (string/join ", "))
         md-trailer-link (if trailer-url
                           (md/link "Trailer" trailer-url)
                           (md/link "Trailer NOT FOUND" nil))
@@ -113,36 +110,26 @@
                                     parse-html
                                     (search :body nil)
                                     md/as-markdown)
-        md-steam-link (fetch-steam-url title)
-        description-md (str
-                         "Genres: " (md/italic genres) md/new-line
-                         "Developers: " (md/bold developers)
-                         md/new-section
-                         (md/bold
-                           (str md-steam-link " | " md-trailer-link " | " (md/link "Bundle Link" bundle-url)))
-                         md/new-section
-                         "-----"
-                         md/new-section
-                         description
-                         (when system-requirements
-                           (str
-                             md/new-section
-                             "-----"
-                             (md/heading 3 "System Requirements")
-                             system-requirements)))]
-
-    (print-flush " - Uploading to Trello... ")
-    (if (and trello-labels (upload-to-trello! title description-md image-url trailer-url trello-labels))
-      (println "OK")
-      (do (println (if trello-labels "Failed" "Skipped"))
-          (println " - Saving markdown")
-          (let [file (str "./not-uploaded/" game-url-name ".md")
-                enhanced-markdown (str
-                                    (md/heading 1 title) "\n"
-                                    (md/image image-url) md/new-line
-                                    description-md)]
-            (io/make-parents file)
-            (spit file enhanced-markdown))))))
+        md-steam-link (fetch-steam-url title)]
+    (str
+      (when genre-text
+        (str "Genres: " (md/italic genre-text) md/new-line))
+      (when developers-text
+        (str "Developers: " (md/bold developers-text)))
+      (when (or genre-text developers-text)
+        md/new-section)
+      (md/bold
+        (str md-steam-link " | " md-trailer-link " | " (md/link "Bundle Link" bundle-url)))
+      md/new-section
+      "-----"
+      md/new-section
+      description
+      (when system-requirements
+        (str
+          md/new-section
+          "-----"
+          (md/heading 3 "System Requirements")
+          system-requirements)))))
 
 
 (defn ^:private create-delivery-method-label
@@ -161,10 +148,23 @@
     (create-delivery-method-label delivery-method)))
 
 
-(defn ^:private one-of [m & keys]
+(defn ^:private one-of
+  [m & keys]
   (when keys
     (or (get m (first keys))
         (recur m (next keys)))))
+
+
+(defn ^:private save-to-file!
+  [{:keys [title game-url-name image-url] :as _game} md-description]
+  (println " - Saving markdown")
+  (let [file (str "./not-uploaded/" game-url-name ".md")
+        enhanced-markdown (str
+                            (md/heading 1 title) "\n"
+                            (md/image image-url) md/new-line
+                            md-description)]
+    (io/make-parents file)
+    (spit file enhanced-markdown)))
 
 
 (defn process-games!
@@ -176,9 +176,16 @@
         find-label (and upload?
                         (memoize #(find-delivery-method-label all-labels %)))]
     (doseq [game games]
-      (let [trello-labels (and upload?
+      (println "Next:" (:title game))
+      (let [{:keys [title image-url trailer-url]} game
+            md-description (build-md-description game)
+            trello-labels (and upload?
                                (cons bundle-label-id (map find-label (:delivery-methods game))))]
-        (process-game! game trello-labels)))))
+        (print-flush " - Uploading to Trello... ")
+        (if (and upload? (upload-to-trello! title md-description image-url trailer-url trello-labels))
+          (println "OK")
+          (do (println (if upload? "Failed" "Skipped"))
+              (save-to-file! game md-description)))))))
 
 
 (defn process-choice-url!
