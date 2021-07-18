@@ -24,7 +24,7 @@
 
 
 (defn ^:private fuzzy-title
-  "Replaces some known culprit characters with there expected variants"
+  "Replaces some known culprit characters with their expected variants"
   [s]
   (-> (string/lower-case s)
       (string/replace \– \-)))
