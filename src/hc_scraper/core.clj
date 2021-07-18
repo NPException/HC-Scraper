@@ -3,10 +3,12 @@
   (:require [hc-scraper.markdown :as md]
             [hc-scraper.trello :as trello]
             [hc-scraper.web :refer [load-hiccup parse-html search-all search]]
+            [hc-scraper.humble-choice :as humble-choice]
             [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.java.io :as io])
-  (:import (java.time LocalDateTime)))
+  (:import (java.time LocalDateTime)
+           (java.net URLEncoder)))
 
 ;; TODO: automatically use first Trello list as NEW list
 ;; TODO: create target list (#,A-Z) automatically when necessary and not yet present
@@ -52,7 +54,7 @@
   (print-flush " - Searching for Steam Page URL... ")
   (let [clean-title (or (second (re-matches #"(.*?)( \+ [\w ]+ DLC[s*]?)$" title))
                         title)
-        encoded-title (java.net.URLEncoder/encode ^String clean-title "UTF-8")
+        encoded-title (URLEncoder/encode ^String clean-title "UTF-8")
         html (load-hiccup (str "https://store.steampowered.com/search/?category1=998&term=" encoded-title))
         candidates (search-all html :a {:data-search-page "1"} true)
         match (->> candidates
@@ -90,23 +92,24 @@
     :ok))
 
 
-(defn ^:private process-game! [data trello-labels]
-  (let [title (:title data)
-        _ (println "Next:" title)
-        genres (string/join ", " (:genres data))
-        developers (string/join ", " (:developers data))
-        yt-url (some->> data :carousel_content :youtube-link first
-                        (str "https://www.youtube.com/watch?v="))
-        md-yt-link (if yt-url
-                     (md/link "Youtube Trailer" yt-url)
-                     (md/link "Youtube Trailer NOT FOUND" nil))
-        choice-url (:choice-url data)
-        image-url (:image data)
-        description (-> (:description data)
+;; TODO: separate out markdown-creation to its own pure function
+(defn ^:private process-game!
+  [{:keys [title game-url-name genres developers
+           trailer-url bundle-url image-url
+           description-html system-requirements-html]
+    :as _data}
+   trello-labels]
+  (println "Next:" title)
+  (let [genres (some->> genres (string/join ", "))
+        developers (some->> developers (string/join ", "))
+        md-trailer-link (if trailer-url
+                          (md/link "Trailer" trailer-url)
+                          (md/link "Trailer NOT FOUND" nil))
+        description (-> description-html
                         parse-html
                         (search :body nil)
                         md/as-markdown)
-        system-requirements (some-> (:system_requirements data)
+        system-requirements (some-> system-requirements-html
                                     parse-html
                                     (search :body nil)
                                     md/as-markdown)
@@ -116,7 +119,7 @@
                          "Developers: " (md/bold developers)
                          md/new-section
                          (md/bold
-                           (str md-steam-link " | " md-yt-link " | " (md/link "Humble Choice Link" choice-url)))
+                           (str md-steam-link " | " md-trailer-link " | " (md/link "Bundle Link" bundle-url)))
                          md/new-section
                          "-----"
                          md/new-section
@@ -129,11 +132,11 @@
                              system-requirements)))]
 
     (print-flush " - Uploading to Trello... ")
-    (if (and trello-labels (upload-to-trello! title description-md image-url yt-url trello-labels))
+    (if (and trello-labels (upload-to-trello! title description-md image-url trailer-url trello-labels))
       (println "OK")
-      (do (println "Failed")
+      (do (println (if trello-labels "Failed" "Skipped"))
           (println " - Saving markdown")
-          (let [file (str "./not-uploaded/" (:game-url-name data) ".md")
+          (let [file (str "./not-uploaded/" game-url-name ".md")
                 enhanced-markdown (str
                                     (md/heading 1 title) "\n"
                                     (md/image image-url) md/new-line
@@ -164,42 +167,44 @@
         (recur m (next keys)))))
 
 
-(defn process-url!
+(defn process-games!
+  [games bundle-label-id upload?]
+  (let [all-labels (and upload?
+                        (->> (trello/all-labels board-id)
+                             (map (juxt :name :id))
+                             (into {})))
+        find-label (and upload?
+                        (memoize #(find-delivery-method-label all-labels %)))]
+    (doseq [game games]
+      (let [trello-labels (and upload?
+                               (cons bundle-label-id (map find-label (:delivery-methods game))))]
+        (process-game! game trello-labels)))))
+
+
+(defn process-choice-url!
   [choice-month-url upload?]
   (if (nil? choice-month-url)
-    (println "Please supply at least one humble choice month URL as parameter")
+    (println "Please supply a Humble choice month URL as parameter")
     (let [_ (println "Making request to" choice-month-url)
           html (load-hiccup choice-month-url)
           [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"} true)
-          raw-edn (-> json-data
-                      (json/read-str :key-fn keyword))
+          raw-edn (json/read-str json-data :key-fn keyword)
           data (:contentChoiceOptions raw-edn)
           base-url (str "https://www.humblebundle.com/subscription/" (:productUrlPath data) "/")
           choice-month (:title data)
-          games (-> data
-                    :contentChoiceData
-                    (one-of :initial :initial-without-order)
-                    :content_choices)]
-      (if (not games)
-        (println "No Humble Choice games found. Is the URL correct?")
+          games-map (-> data
+                        :contentChoiceData
+                        (one-of :initial :initial-without-order)
+                        :content_choices)]
+      (if (not games-map)
+        (println "No games found. Is the URL correct?")
         (do
-          (println "Found" (count games) "games.")
-          (let [month-label-id (and upload?
-                                    (trello/create-label! board-id (str "HC " choice-month) :red))
-                all-labels (and upload?
-                                (->> (trello/all-labels board-id)
-                                     (map (juxt :name :id))
-                                     (into {})))
-                find-label (and upload?
-                                (memoize #(find-delivery-method-label all-labels %)))]
-            (doseq [game games]
-              (let [game-url-name (name (key game))
-                    game-data (assoc (val game)
-                                :game-url-name game-url-name
-                                :choice-url (str base-url game-url-name))
-                    trello-labels (and upload?
-                                       (cons month-label-id (map find-label (:delivery_methods game-data))))]
-                (process-game! game-data trello-labels)))))))))
+          (println "Found" (count games-map) "games.")
+          (let [month-label-id (and upload? (trello/create-label! board-id (str "HC " choice-month) :red))]
+            (process-games!
+              (mapv #(humble-choice/extract-game-data base-url %) games-map)
+              month-label-id
+              upload?)))))))
 
 
 (defn fetch-current-choice-bundle!
@@ -208,7 +213,7 @@
   (let [now (LocalDateTime/now)
         month (-> now .getMonth .name .toLowerCase)
         year (-> now .getYear)]
-    (process-url!
+    (process-choice-url!
       (str "https://www.humblebundle.com/subscription/" month "-" year)
       upload-to-trello?)
     (trello/sort-list! upload-list-id)))
