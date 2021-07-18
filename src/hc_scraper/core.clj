@@ -2,9 +2,8 @@
   (:gen-class)
   (:require [hc-scraper.markdown :as md]
             [hc-scraper.trello :as trello]
-            [hc-scraper.web :refer [load-hiccup parse-html search-all search]]
-            [hc-scraper.humble-choice :as humble-choice]
-            [clojure.data.json :as json]
+            [hc-scraper.web :as web]
+            [hc-scraper.humble :as humble]
             [clojure.string :as string]
             [clojure.java.io :as io])
   (:import (java.time LocalDateTime)
@@ -33,7 +32,7 @@
 
 (defn ^:private extract-game-title
   [candidate-row]
-  (->> (search candidate-row :span {:class "title"})
+  (->> (web/search candidate-row :span {:class "title"})
        (drop 2)
        (filter string?)
        (map string/trim)
@@ -55,8 +54,8 @@
   (let [clean-title (or (second (re-matches #"(.*?)( \+ [\w ]+ DLC[s*]?)$" title))
                         title)
         encoded-title (URLEncoder/encode ^String clean-title "UTF-8")
-        html (load-hiccup (str "https://store.steampowered.com/search/?category1=998&term=" encoded-title))
-        candidates (search-all html :a {:data-search-page "1"} true)
+        html (web/load-hiccup (str "https://store.steampowered.com/search/?category1=998&term=" encoded-title))
+        candidates (web/search-all html :a {:data-search-page "1"} true)
         match (->> candidates
                    (filter #(matches-title? clean-title %))
                    first)
@@ -92,9 +91,13 @@
     :ok))
 
 
+(defn ^:private html->md [html]
+  (-> (web/parse-html html)
+      (web/search :body nil)
+      md/as-markdown))
+
 (defn ^:private build-md-description
-  [{:keys [title genres developers
-           trailer-url bundle-url
+  [{:keys [title genres developers trailer-url bundle-url
            description-html system-requirements-html]
     :as _game-data}]
   (let [genre-text (some->> genres (string/join ", "))
@@ -102,14 +105,8 @@
         md-trailer-link (if trailer-url
                           (md/link "Trailer" trailer-url)
                           (md/link "Trailer NOT FOUND" nil))
-        description (-> description-html
-                        parse-html
-                        (search :body nil)
-                        md/as-markdown)
-        system-requirements (some-> system-requirements-html
-                                    parse-html
-                                    (search :body nil)
-                                    md/as-markdown)
+        description (-> description-html html->md)
+        system-requirements (some-> system-requirements-html html->md)
         md-steam-link (fetch-steam-url title)]
     (str
       (when genre-text
@@ -148,13 +145,6 @@
     (create-delivery-method-label delivery-method)))
 
 
-(defn ^:private one-of
-  [m & keys]
-  (when keys
-    (or (get m (first keys))
-        (recur m (next keys)))))
-
-
 (defn ^:private save-to-file!
   [{:keys [title game-url-name image-url] :as _game} md-description]
   (println " - Saving markdown")
@@ -188,30 +178,19 @@
               (save-to-file! game md-description)))))))
 
 
-(defn process-choice-url!
-  [choice-month-url upload?]
+(defn process-humble-url!
+  [choice-month-url extract-data-fn upload?]
   (if (nil? choice-month-url)
     (println "Please supply a Humble choice month URL as parameter")
     (let [_ (println "Making request to" choice-month-url)
-          html (load-hiccup choice-month-url)
-          [_ _ json-data] (search html :script {:id "webpack-monthly-product-data"} true)
-          raw-edn (json/read-str json-data :key-fn keyword)
-          data (:contentChoiceOptions raw-edn)
-          base-url (str "https://www.humblebundle.com/subscription/" (:productUrlPath data) "/")
-          choice-month (:title data)
-          games-map (-> data
-                        :contentChoiceData
-                        (one-of :initial :initial-without-order)
-                        :content_choices)]
-      (if (not games-map)
+          html (web/load-hiccup choice-month-url)
+          {:keys [games trello-label-name]} (extract-data-fn html)]
+      (if (not (seq games))
         (println "No games found. Is the URL correct?")
         (do
-          (println "Found" (count games-map) "games.")
-          (let [month-label-id (and upload? (trello/create-label! board-id (str "HC " choice-month) :red))]
-            (process-games!
-              (mapv #(humble-choice/extract-game-data base-url %) games-map)
-              month-label-id
-              upload?)))))))
+          (println "Found" (count games) "games.")
+          (let [bundle-label-id (and upload? (trello/create-label! board-id trello-label-name :red))]
+            (process-games! games bundle-label-id upload?)))))))
 
 
 (defn fetch-current-choice-bundle!
@@ -220,15 +199,15 @@
   (let [now (LocalDateTime/now)
         month (-> now .getMonth .name .toLowerCase)
         year (-> now .getYear)]
-    (process-choice-url!
+    (process-humble-url!
       (str "https://www.humblebundle.com/subscription/" month "-" year)
+      humble/extract-choice-data
       upload-to-trello?)
     (trello/sort-list! upload-list-id)))
 
 
 (defn -main [& _args]
   (fetch-current-choice-bundle! true))
-
 
 
 (defn transfer-cards-from-upload-list!
@@ -259,6 +238,8 @@
 
 ;; functions for REPL evaluation
 (comment
+
+  (process-humble-url! "https://www.humblebundle.com/games/sakura-series-bundle" humble/extract-bundle-data false)
 
   (fetch-current-choice-bundle! true)
 
