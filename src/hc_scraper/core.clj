@@ -214,10 +214,6 @@
     (trello/sort-list! upload-list-id)))
 
 
-(defn -main [& _args]
-  (fetch-current-choice-bundle! true))
-
-
 (defn transfer-cards-from-upload-list!
   []
   (let [list-ids (->> (trello/all-lists board-id)
@@ -244,10 +240,15 @@
            {}))))
 
 
+(defn -main [& _args]
+  (transfer-cards-from-upload-list!)
+  (fetch-current-choice-bundle! true))
+
+
 ;; functions for REPL evaluation
 (comment
 
-  (fetch-bundle! "https://www.humblebundle.com/games/sakura-series-bundle" true)
+  (fetch-bundle! "https://www.humblebundle.com/games/fall-vr-emporium-bundle" true)
 
   (fetch-current-choice-bundle! true)
 
