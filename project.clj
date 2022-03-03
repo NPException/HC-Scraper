@@ -3,7 +3,7 @@
   :url "http://example.com/FIXME"
   :license {:name "MIT License"}
   :global-vars {*warn-on-reflection* true}
-  :dependencies [[org.clojure/clojure "1.10.1"]
+  :dependencies [[org.clojure/clojure "1.11.0-rc1"]
                  [org.clojure/data.json "1.0.0"]
                  [http-kit "2.4.0-alpha6"]
                  [hickory "0.7.1"]]

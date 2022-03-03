@@ -1,6 +1,6 @@
 (ns hc-scraper.humble
-  (:require [hc-scraper.web :as web]
-            [clojure.data.json :as json]))
+  (:require [clojure.data.json :as json]
+            [hc-scraper.web :as web]))
 
 ;; game data shape
 (comment
@@ -35,10 +35,10 @@
 
 
 (defn ^:private one-of
-  [m & keys]
-  (when keys
-    (or (get m (first keys))
-        (recur m (next keys)))))
+  [m & key-fns]
+  (when key-fns
+    (or ((first key-fns) m)
+        (recur m (next key-fns)))))
 
 
 (defn extract-choice-data
@@ -50,8 +50,8 @@
         choice-month (:title data)
         games-map (-> data
                       :contentChoiceData
-                      (one-of :initial :initial-without-order)
-                      :content_choices)]
+                      (one-of :initial :initial-without-order :game_data)
+                      (one-of :content_choices identity))]
     {:trello-label-name (str "HC " choice-month)
      :games (mapv #(build-choice-game-data base-url %) games-map)}))
 
