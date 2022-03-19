@@ -53,7 +53,7 @@
   (let [clean-title (or (second (re-matches #"(.*?)( \+ [\w ]+ DLC[s*]?)$" title))
                         title)
         encoded-title (URLEncoder/encode ^String clean-title "UTF-8")
-        html (web/load-hiccup (str "https://store.steampowered.com/search/?category1=998&term=" encoded-title))
+        html (web/load-hiccup (str "https://store.steampowered.com/search/?category1=998%2C994%2C21&term=" encoded-title)) ;; categories: game, software, dlc
         candidates (web/search-all html :a {:data-search-page "1"} true)
         match (->> candidates
                    (filter #(matches-title? clean-title %))
@@ -97,8 +97,8 @@
 
 (defn ^:private build-md-description
   [{:keys [title genres developers trailer-url bundle-url
-           description-html system-requirements-html]
-    :as _game-data}]
+           description-html system-requirements-html content-type steam-app-id]
+    :as _item-data}]
   (let [genre-text (some->> genres (string/join ", "))
         developers-text (some->> developers (string/join ", "))
         md-trailer-link (if trailer-url
@@ -106,7 +106,10 @@
                           (md/link "Trailer NOT FOUND" nil))
         description (-> description-html html->md)
         system-requirements (some-> system-requirements-html html->md)
-        md-steam-link (fetch-steam-url title)]
+        md-steam-link (if steam-app-id
+                        (do (println " - Generated Steam Page URL for known app id:" steam-app-id)
+                          (md/link "Steam Page" (str "https://store.steampowered.com/app/" steam-app-id)))
+                        (when (#{"game" "software"} content-type) (fetch-steam-url title)))]
     (str
       (when genre-text
         (str "Genres: " (md/italic genre-text) md/new-line))
@@ -115,7 +118,9 @@
       (when (or genre-text developers-text)
         md/new-section)
       (md/bold
-        (str md-steam-link " | " md-trailer-link " | " (md/link "Bundle Link" bundle-url)))
+        (str
+          (when md-steam-link (str md-steam-link " | "))
+          md-trailer-link " | " (md/link "Bundle Link" bundle-url)))
       md/new-section
       "-----"
       md/new-section
@@ -145,9 +150,9 @@
 
 
 (defn ^:private save-to-file!
-  [{:keys [title game-url-name image-url] :as _game} md-description]
+  [{:keys [title item-url-name image-url] :as _item} md-description]
   (println " - Saving markdown")
-  (let [file (str "./not-uploaded/" game-url-name ".md")
+  (let [file (str "./not-uploaded/" item-url-name ".md")
         enhanced-markdown (str
                             (md/heading 1 title) "\n"
                             (md/image nil image-url) md/new-line
@@ -156,44 +161,44 @@
     (spit file enhanced-markdown)))
 
 
-(defn process-games!
-  [games bundle-label-id upload?]
+(defn process-items!
+  [items bundle-label-id upload?]
   (let [all-labels (and upload?
                         (->> (trello/all-labels board-id)
                              (map (juxt :name :id))
                              (into {})))
         find-label (and upload?
                         (memoize #(find-delivery-method-label all-labels (string/lower-case %))))]
-    (doseq [game games]
-      (println "Next:" (:title game))
-      (let [{:keys [title image-url trailer-url]} game
-            md-description (build-md-description game)
+    (doseq [item items]
+      (println "Next:" (:title item))
+      (let [{:keys [title image-url trailer-url]} item
+            md-description (build-md-description item)
             trello-labels (and upload?
-                               (cons bundle-label-id (map find-label (:delivery-methods game))))]
+                               (cons bundle-label-id (map find-label (:delivery-methods item))))]
         (print-flush " - Uploading to Trello... ")
         (if (and upload? (upload-to-trello! title md-description image-url trailer-url trello-labels))
           (println "OK")
           (do (println (if upload? "Failed" "Skipped"))
-              (save-to-file! game md-description)))))))
+              (save-to-file! item md-description)))))))
 
 
 (defn process-humble-url!
   [humble-url extract-data-fn upload?]
   (if (nil? humble-url)
-    (println "Please supply a Humble choice month URL as parameter")
+    (println "Please supply a Humble URL as parameter")
     (let [_ (println "Making request to" humble-url)
           html (web/load-hiccup humble-url)
-          {:keys [games trello-label-name]} (extract-data-fn html)]
-      (if (not (seq games))
-        (println "No games found. Is the URL correct?")
+          {:keys [items trello-label-name]} (extract-data-fn html)]
+      (if (not (seq items))
+        (println "No items found. Is the URL correct?")
         (do
-          (println "Found" (count games) "games.")
+          (println "Found" (count items) "items.")
           (let [bundle-label-id (and upload? (trello/create-label! board-id trello-label-name :red))]
-            (process-games! games bundle-label-id upload?)))))))
+            (process-items! items bundle-label-id upload?)))))))
 
 
 (defn fetch-current-choice-bundle!
-  "Scrapes the humble choice games for the current month and year"
+  "Scrapes the humble choice for the current month and year"
   [upload-to-trello?]
   (let [now (LocalDateTime/now)
         month (-> now .getMonth .name .toLowerCase)
@@ -207,9 +212,9 @@
 
 
 (defn fetch-bundle!
-  "Scrapes a regular Humble bundle URL"
-  [url upload-to-trello?]
-  (process-humble-url! url humble/extract-bundle-data upload-to-trello?)
+  "Scrapes a regular Humble bundle URL."
+  [url upload-to-trello? desired-content-types]
+  (process-humble-url! url #(humble/extract-bundle-data % desired-content-types) upload-to-trello?)
   (when upload-to-trello?
     (trello/sort-list! upload-list-id)))
 
@@ -248,7 +253,7 @@
 ;; functions for REPL evaluation
 (comment
 
-  (fetch-bundle! "https://www.humblebundle.com/games/fall-vr-emporium-bundle" true)
+  (fetch-bundle! "https://www.humblebundle.com/stand-with-ukraine-bundle" true #{"game"})
 
   (fetch-current-choice-bundle! true)
 

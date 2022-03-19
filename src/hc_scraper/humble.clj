@@ -2,11 +2,13 @@
   (:require [clojure.data.json :as json]
             [hc-scraper.web :as web]))
 
-;; game data shape
+;; item data shape
 (comment
   {
    :title                               "Game Title"
-   :game-url-name                       "game-title"        ;; url- and filesystem-safe name
+   :item-url-name                       "game-title"        ;; url- and filesystem-safe name
+   :content-type #_optional             "game"              ;; known: nil, "game", "software", "ebook", "music"
+   :steam-app-id #_optional             1234567
    :genres #_optional                   ["Genre 1" "Genre 2"]
    :developers #_optional               ["dev studio A" "dev studio B"]
    :delivery-methods                    ["steam" "gog" "epic"] ;; on which store the game is delivered
@@ -18,11 +20,13 @@
    }
   )
 
-(defn ^:private build-choice-game-data
-  ;; input in this case is a map entry from the games map
+(defn ^:private build-choice-item-data
+  ;; input in this case is a map entry from the items map
   [base-url [key data]]
   {:title                    (:title data)
-   :game-url-name            (name key)
+   :item-url-name            (name key)
+   :content-type             "game"                         ;; choice bundles are always games
+   :steam-app-id             (some->> data :tpkds (map :steam_app_id) first)
    :genres                   (:genres data)
    :developers               (:developers data)
    :delivery-methods         (:delivery_methods data)
@@ -48,34 +52,36 @@
         data         (:contentChoiceOptions raw-edn)
         base-url     (str "https://www.humblebundle.com/subscription/" (:productUrlPath data) "/")
         choice-month (:title data)
-        games-map    (-> data
+        items-map    (-> data
                          :contentChoiceData
                          (one-of :initial :initial-without-order :game_data)
                          (one-of :content_choices identity))]
     {:trello-label-name (str "HC " choice-month)
-     :games             (mapv #(build-choice-game-data base-url %) games-map)}))
+     :items             (mapv #(build-choice-item-data base-url %) items-map)}))
 
 
-(defn ^:private extract-bundle-game-delivery-methods
+(defn ^:private extract-bundle-item-delivery-methods
   [data]
   (let [availability-data (:availability_icons data)
         names-map         (:human_names availability-data)
         delivery-keys     (keys (:delivery_to_platform availability-data))]
     (mapv names-map delivery-keys)))
 
-(defn ^:private build-bundle-game-data
-  ;; input in this case is a map entry from the games map
+(defn ^:private build-bundle-item-data
+  ;; input in this case is a map entry from the items map
   [base-url logo-url bundle-name [_key data]]
   {:title                    (:human_name data)
-   :game-url-name            (:machine_name data)
+   :item-url-name            (:machine_name data)
+   :content-type             (:item_content_type data)
+   :steam-app-id             nil
    ;; TODO: check future bundles for genre
    :genres                   nil
-   :developers               (mapv :developer-name (:developers data))
-   :delivery-methods         (extract-bundle-game-delivery-methods data)
+   :developers               (not-empty (mapv :developer-name (:developers data)))
+   :delivery-methods         (extract-bundle-item-delivery-methods data)
    :trailer-url              (some->> data :youtube_link
                                (str "https://www.youtube.com/watch?v="))
    :bundle-url               (str base-url (:machine_name data))
-   :image-url                (-> data :resolved_paths :featured_image)
+   :image-url                (-> data :resolved_paths (one-of :featured_image :front_page_art_imgix_retina))
    :description-html         (str
                                (when logo-url
                                  (str "<img src=\"" logo-url "\" alt=\"" bundle-name "\"><br>"))
@@ -83,15 +89,24 @@
    ;; TODO: check future bundles for sys-requirements
    :system-requirements-html nil})
 
+(defn ^:private log-unknown-content-type
+  [type]
+  (when-not (contains? #{"game" "music" "software" "ebook" nil} type)
+    (println "Unknown item_content_type:" type))
+  type)
 
 (defn extract-bundle-data
-  [page-hiccup]
+  [page-hiccup desired-content-types]
   (let [[_ _ json-data] (web/search page-hiccup :script {:id "webpack-bundle-page-data"} true)
         raw-edn     (json/read-str json-data :key-fn keyword)
         bundle-data (:bundleData raw-edn)
         bundle-name (-> bundle-data :basic_data :human_name)
         base-url    (str "https://www.humblebundle.com/" (:page_url bundle-data) "/")
         logo-url    (-> bundle-data :basic_data :logo)
-        games-map   (:tier_item_data bundle-data)]
+        items-map   (:tier_item_data bundle-data)]
     {:trello-label-name bundle-name
-     :games             (mapv #(build-bundle-game-data base-url logo-url bundle-name %) games-map)}))
+     :items             (into []
+                          (comp
+                            (filter #(-> % val :item_content_type log-unknown-content-type desired-content-types))
+                            (map #(build-bundle-item-data base-url logo-url bundle-name %)))
+                          items-map)}))
