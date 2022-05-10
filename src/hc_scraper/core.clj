@@ -45,6 +45,14 @@
         (= (fuzzy-title candidate-title)
            (fuzzy-title title)))))
 
+(defn ^:private md-steam-deck-compat-badge
+  [app-id]
+  (md/image "Steam Deck Compatibility" (str "https://npexception.de/compatibility-badge/" app-id ".png?size=32")))
+
+(defn ^:private extract-app-id-from-url
+  [steam-url]
+  (second (re-find #"/app/(\d+)" steam-url)))
+
 (defn ^:private fetch-steam-url
   "Queries Steam for the game title, and returns the first store page link found.
   If the game comes with DLCs the title is cleaned up if possible."
@@ -72,10 +80,12 @@
                easy-guess "Bad guess"
                :else "Failed"))
     (if href
-      (md/link
-        (str "Steam Page" (when-not match " ?"))
-        (subs href 0 (string/last-index-of href "/")))
-      (md/link "Steam Page NOT FOUND" ""))))
+      [(md/link
+         (str "Steam Page" (when-not match " ?"))
+         (subs href 0 (string/last-index-of href "/")))
+       (md-steam-deck-compat-badge (extract-app-id-from-url href))]
+      [(md/link "Steam Page NOT FOUND" "")
+       nil])))
 
 
 (defn ^:private upload-to-trello!
@@ -106,11 +116,21 @@
                           (md/link "Trailer NOT FOUND" nil))
         description (-> description-html html->md)
         system-requirements (some-> system-requirements-html html->md)
-        md-steam-link (if steam-app-id
-                        (do (println " - Generated Steam Page URL for known app id:" steam-app-id)
-                          (md/link "Steam Page" (str "https://store.steampowered.com/app/" steam-app-id)))
-                        (when (#{"game" "software"} content-type) (fetch-steam-url title)))]
+        [md-steam-link
+         md-steam-deck-badge] (if steam-app-id
+                                (do (println " - Generated Steam Page URL for known app id:" steam-app-id)
+                                    [(md/link "Steam Page" (str "https://store.steampowered.com/app/" steam-app-id))
+                                     (md-steam-deck-compat-badge steam-app-id)])
+                                (when (#{"game" "software"} content-type)
+                                  (fetch-steam-url title)))]
     (str
+      (when md-steam-deck-badge
+        (str (md/bold "Steam Deck Compatibility")
+          md/new-section
+          md-steam-deck-badge
+          md/new-section
+          "-----"
+          md/new-section))
       (when genre-text
         (str "Genres: " (md/italic genre-text) md/new-line))
       (when developers-text
