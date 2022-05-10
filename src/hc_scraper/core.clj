@@ -293,4 +293,35 @@
 
   ;; sort all lists
   (trello/sort-all-lists! board-id)
+
+
+  ;; add Steam Deck compat badges to all cards that don't have them yet
+
+  (defn find-app-id [desc]
+    (second (re-find #"\[Steam (?:Page|Link)\]\(https?://store.steampowered.com/app/(\d+)" desc)))
+
+  (defn splice-badge [{:keys [desc] :as card}]
+    (when-let [app-id (and (not (string/includes? desc "![Steam Deck Compatibility]"))
+                           (find-app-id desc))]
+      (assoc card :desc
+        (str (md/bold "Steam Deck Compatibility")
+          md/new-section
+          (md-steam-deck-compat-badge app-id)
+          md/new-section
+          "-----"
+          md/new-section
+          desc))))
+
+  (defn update-card! [card]
+    (trello/api-put ["cards" (:id card)] card false))
+
+  (let [all-lists (trello/all-lists board-id)
+        all-cards (->> all-lists
+                       (mapcat #(trello/get-cards (:id %) [:id :name :desc])))]
+    (doseq [card all-cards]
+      (print (:name card))
+      (when-let [with-badge (splice-badge card)]
+        (print " - UPDATED")
+        (update-card! with-badge))
+      (println)))
   )

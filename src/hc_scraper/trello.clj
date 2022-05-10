@@ -105,6 +105,19 @@
                              :null))})))
 
 
+(defn get-card
+  "Gets the card with the given id, optionally only returning the desired fields.
+  Fields can be passed as a symbols, keywords or strings."
+  ([card-id]
+   (get-card card-id nil))
+  ([card-id fields]
+   (api-get ["cards" card-id ]
+     (when (seq fields)
+       {:fields (->> fields
+                     (map name)
+                     (string/join ","))}))))
+
+
 (defn get-cards
   "Gets the cards in the given list, optionally only returning the desired fields.
   Fields can be passed as a symbols, keywords or strings."
