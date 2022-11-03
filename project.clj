@@ -5,6 +5,8 @@
   :global-vars {*warn-on-reflection* true}
   :dependencies [[org.clojure/clojure "1.11.0-rc1"]
                  [org.clojure/data.json "1.0.0"]
+                 [org.clojure/tools.cli "1.0.206"]
+                 [com.clojure-goes-fast/clj-java-decompiler "0.3.1"]
                  [http-kit "2.4.0-alpha6"]
                  [hickory "0.7.1"]]
   :main ^:skip-aot hc-scraper.core

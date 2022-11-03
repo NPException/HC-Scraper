@@ -3,8 +3,7 @@
             [clojure.java.io :as io]
             [org.httpkit.sni-client :as sni-client]
             [org.httpkit.client :as http])
-  (:import (java.util Map)
-           (java.io Closeable)))
+  (:import (java.util Map)))
 
 (alter-var-root #'org.httpkit.client/*default-client* (fn [_] sni-client/default-client))
 
@@ -44,11 +43,11 @@
     (let [match? (and (or (nil? target-tag) (= (tag element) target-tag))
                       (submap? target-attribs (attribs element) case-sensitive?))]
       (loop [children (body element)
-             results (if match? [element] [])]
+             results  (if match? [element] [])]
         (if (empty? children)
           results
           (recur (rest children)
-                 (into results (search-all (first children) target-tag target-attribs case-sensitive?))))))))
+            (into results (search-all (first children) target-tag target-attribs case-sensitive?))))))))
 
 
 (defn search
@@ -84,13 +83,15 @@
 (defn download
   "Downloads data from the given URL, and outputs it to f via spit."
   [url f]
-  ;; TODO try to hack around http-kit to make this not load the whole file into memory first
   (println "Start downloading" f " - "
-           (-> @(http/request {:method :head :url url}) :headers :content-length
-               Long/parseLong
-               (quot 1000))
-           "kB")
-  (with-open [^Closeable in (:body @(http/request {:url url :as :stream}))
+    (try
+      (-> @(http/request {:method :head :url url}) :headers :content-length
+          Long/parseLong
+          (quot 1000))
+      (catch Exception _
+        "unknown"))
+    "kB")
+  (with-open [in  (io/input-stream url)
               out (io/output-stream f)]
     (io/copy in out))
   (println "Finished downloading" f)
