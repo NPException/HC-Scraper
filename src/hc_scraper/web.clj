@@ -66,17 +66,17 @@
        first))
 
 
-(defn load-html [url]
+(defn load-url [url & {:as options}]
   (some->
-    (http/request {:method :get :url url})
+    (http/request (merge {:method :get :url url} options))
     deref
     :body))
 
 
-(defn load-hiccup [url]
+(defn load-hiccup [url & {:as options}]
   (some->
     url
-    load-html
+    (load-url options)
     parse-html))
 
 

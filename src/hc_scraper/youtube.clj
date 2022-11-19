@@ -1,5 +1,5 @@
 (ns hc-scraper.youtube
-  (:require [hc-scraper.web :refer [load-html parse-html search-all search download]]
+  (:require [hc-scraper.web :refer [load-url parse-html search-all search download]]
             [clojure.data.json :as json]
             [clojure.string :as string]
             [clojure.java.io :as io])
@@ -76,7 +76,7 @@
 
 (defn ^:private fetch-data
   [video-url retries]
-  (let [video-page-html (load-html video-url)
+  (let [video-page-html (load-url video-url)
         video-page-hiccup (parse-html video-page-html)
         video-render-data (extract-video-json-data video-page-hiccup)]
     (if (and (nil? video-render-data)
