@@ -19,7 +19,7 @@
 
 
 (defonce rate-limit (atom 0))
-(def rate-limit-sleep 200)
+(def ^Long rate-limit-sleep 200)
 
 (defonce ^LinkedBlockingQueue request-queue (LinkedBlockingQueue.))
 (defonce request-runner
