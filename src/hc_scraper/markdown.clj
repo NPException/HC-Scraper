@@ -15,8 +15,16 @@
 
 (def new-section "\n\n")
 
-(defn link [x url]
-  (str "[" x "](" url ")"))
+(defn link [title url & [trello-option]]
+  (let [title (if trello-option url title)]                 ; trello smartCard links only work if the title is the same as the url
+    (str "[" title "]"
+      "(" url
+      (when trello-option
+        (case trello-option
+          :inline " \"smartCard-inline\""
+          :block " \"smartCard-block\""
+          :embed " \"smartCard-embed\""))
+      ")")))
 
 (defn image [alt url]
   (str "!" (link alt url)))

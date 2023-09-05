@@ -82,7 +82,8 @@
     (if href
       [(md/link
          (str "Steam Page" (when-not match " ?"))
-         (subs href 0 (string/last-index-of href "/")))
+         (subs href 0 (string/last-index-of href "/"))
+         :inline)
        (md-steam-deck-compat-badge (extract-app-id-from-url href))]
       [(md/link "Steam Page NOT FOUND" "")
        nil])))
@@ -112,14 +113,14 @@
   (let [genre-text (some->> genres (string/join ", "))
         developers-text (some->> developers (string/join ", "))
         md-trailer-link (if trailer-url
-                          (md/link "Trailer" trailer-url)
+                          (md/link "Trailer" trailer-url :inline)
                           (md/link "Trailer NOT FOUND" nil))
         description (-> description-html html->md)
         system-requirements (some-> system-requirements-html html->md)
         [md-steam-link
          md-steam-deck-badge] (if steam-app-id
                                 (do (println " - Generated Steam Page URL for known app id:" steam-app-id)
-                                    [(md/link "Steam Page" (str "https://store.steampowered.com/app/" steam-app-id))
+                                    [(md/link "Steam Page" (str "https://store.steampowered.com/app/" steam-app-id) :inline)
                                      (md-steam-deck-compat-badge steam-app-id)])
                                 (when (#{"game" "software"} content-type)
                                   (fetch-steam-url title)))]
@@ -137,10 +138,9 @@
         (str "Developers: " (md/bold developers-text)))
       (when (or genre-text developers-text)
         md/new-section)
-      (md/bold
-        (str
-          (when md-steam-link (str md-steam-link " | "))
-          md-trailer-link " | " (md/link "Bundle Link" bundle-url)))
+      (when md-steam-link (str md-steam-link md/new-line))
+      md-trailer-link md/new-line
+      (md/link "Bundle Link" bundle-url :inline)
       md/new-section
       "-----"
       md/new-section
