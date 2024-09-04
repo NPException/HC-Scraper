@@ -281,3 +281,14 @@
   (->> (all-lists board-id)
        (mapv (comp sort-list! :id)))
   nil)
+
+
+(defn all-cards
+  "Loads all cards from a board"
+  ([board-id]
+   (all-cards board-id nil))
+  ([board-id fields]
+   (->> (all-lists board-id)
+        (sequence
+          (comp (map #(get-cards (:id %) fields))
+                cat)))))

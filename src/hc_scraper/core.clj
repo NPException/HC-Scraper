@@ -324,4 +324,17 @@
         (print " - UPDATED")
         (update-card! with-badge))
       (println)))
+
+
+  ;; all cards that are not in the Google sheet yet
+
+  (let [label-id (->> (trello/all-labels board-id)
+                      (filter #(= (:name %) "In Sheet"))
+                      (first)
+                      :id)]
+    (->> (trello/all-cards board-id [:name :url :idLabels])
+         (remove #(some #{label-id} (:idLabels %)))
+         (def cards-not-in-sheet)))
+
+  ;
   )
