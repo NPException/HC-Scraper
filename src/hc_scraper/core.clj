@@ -273,7 +273,12 @@
 ;; functions for REPL evaluation
 (comment
 
-  (fetch-bundle! "https://www.humblebundle.com/stand-with-ukraine-bundle" true #{"game"})
+  (process-humble-url!
+    (str "https://www.humblebundle.com/subscription/june-2023")
+    humble/extract-choice-data
+    false)
+
+  (fetch-bundle! "https://www.humblebundle.com/games/indieio-super-bundle" true #{"game"})
 
   (fetch-current-choice-bundle! true)
 

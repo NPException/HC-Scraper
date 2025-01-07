@@ -43,12 +43,12 @@
                           :url       url
                           param-type (merge params auth)}
                          (fn [result]
-                           (when (or (case (int (:status result))
+                           (when (or (case (int (or (:status result) 0))
                                        (200 429) false
                                        true)
                                      (:error result))
                              (println (str "Trello returned error for request to " method " " url
-                                           " -> status: " (:status result) ", error: " (:error result))))
+                                           " -> status: " (prn-str (:status result)) ", error: " (prn-str (:error result)))))
                            ;; check for rate limiting
                            (if (= 429 (:status result))
                              (do (println (Date.) "Hit rate limit. Retry after short wait." method url)
