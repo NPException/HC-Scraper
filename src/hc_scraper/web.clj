@@ -104,7 +104,7 @@
 
 
 (defn download
-  "Downloads data from the given URL, and outputs it to f via spit."
+  "Downloads data from the given URL, and outputs it to f via io/copy."
   [url f]
   (println "Start downloading" f " - "
     (try
@@ -114,9 +114,15 @@
       (catch Exception _
         "unknown"))
     "kB")
-  (with-open [in  (io/input-stream url)
-              out (io/output-stream f)]
-    (io/copy in out))
-  (println "Finished downloading" f)
-  (flush)
-  true)
+  (try
+    (with-open [in (io/input-stream url)
+                out (io/output-stream f)]
+      (io/copy in out))
+    (println "Finished downloading" f)
+    (flush)
+    true
+    (catch Exception e
+      (println e)
+      (println "Failed download")
+      (flush)
+      false)))
