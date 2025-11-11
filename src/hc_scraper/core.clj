@@ -278,7 +278,7 @@
     humble/extract-choice-data
     false)
 
-  (fetch-bundle! "https://www.humblebundle.com/games/indieio-super-bundle" true #{"game"})
+  (fetch-bundle! "https://www.humblebundle.com/games/summer-games-done-quick-2025" true #{"game"})
 
   (fetch-current-choice-bundle! true)
 

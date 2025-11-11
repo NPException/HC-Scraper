@@ -1,5 +1,6 @@
 (ns hc-scraper.humble
   (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [hc-scraper.web :as web]))
 
 ;; item data shape
@@ -45,6 +46,11 @@
         (recur m (next key-fns)))))
 
 
+(defn ^:private ign-plus?
+  [[key _]]
+  (str/starts-with? (name key) "ignplus"))
+
+
 (defn extract-choice-data
   [page-hiccup]
   (let [[_ _ json-data] (web/search page-hiccup :script {:id "webpack-monthly-product-data"} true)
@@ -52,12 +58,13 @@
         data         (:contentChoiceOptions raw-edn)
         base-url     (str "https://www.humblebundle.com/subscription/" (:productUrlPath data) "/")
         choice-month (:title data)
-        items-map    (-> data
+        items        (-> data
                          :contentChoiceData
                          (one-of :initial :initial-without-order :game_data)
-                         (one-of :content_choices identity))]
+                         (one-of :content_choices identity)
+                         (->> (remove ign-plus?)))]
     {:trello-label-name (str "HC " choice-month)
-     :items             (mapv #(build-choice-item-data base-url %) items-map)}))
+     :items             (mapv #(build-choice-item-data base-url %) items)}))
 
 
 (defn ^:private extract-bundle-item-delivery-methods
