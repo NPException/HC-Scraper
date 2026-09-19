@@ -199,7 +199,7 @@
 (defn create-card!
   "Creates a card with the given name in the list.
   Rest of the parameters are optional."
-  [list-id name & {:keys [description image-url label-ids]}]
+  [list-id name & {:keys [description image-url label-ids due-date]}]
   (api-post
     ["cards"]
     (merge
@@ -209,6 +209,8 @@
         {:desc description})
       (when image-url
         {:urlSource image-url})
+      (when due-date
+        {:due due-date})
       (when (seq label-ids)
         {:idLabels (string/join "," label-ids)}))))
 

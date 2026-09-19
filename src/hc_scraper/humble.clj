@@ -23,20 +23,23 @@
 
 (defn ^:private build-choice-item-data
   ;; input in this case is a map entry from the items map
-  [base-url [key data]]
-  {:title                    (:title data)
-   :item-url-name            (name key)
-   :content-type             "game"                         ;; choice bundles are always games
-   :steam-app-id             (some->> data :tpkds (map :steam_app_id) first)
-   :genres                   (:genres data)
-   :developers               (:developers data)
-   :delivery-methods         (:delivery_methods data)
-   :trailer-url              (some->> data :carousel_content :youtube-link first
-                               (str "https://www.youtube.com/watch?v="))
-   :bundle-url               (str base-url (name key))
-   :image-url                (:image data)
-   :description-html         (:description data)
-   :system-requirements-html (:system_requirements data)})
+   [base-url [key data]]
+   (let [tpkd (some->> data :tpkds first)]
+     {:title                    (:title data)
+      :item-url-name            (name key)
+      :content-type             "game"                      ;; choice bundles are always games
+      :steam-app-id             (:steam_app_id tpkd)
+      :days-until-expired       (:num_days_until_expired tpkd)
+      :expiration-date-string   (:expiration_date|datetime tpkd)
+      :genres                   (:genres data)
+      :developers               (:developers data)
+      :delivery-methods         (:delivery_methods data)
+      :trailer-url              (some->> data :carousel_content :youtube-link first
+                                  (str "https://www.youtube.com/watch?v="))
+      :bundle-url               (str base-url (name key))
+      :image-url                (:image data)
+      :description-html         (:description data)
+      :system-requirements-html (:system_requirements data)}))
 
 
 (defn ^:private one-of

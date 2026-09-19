@@ -9,7 +9,6 @@
   (:import (java.time LocalDateTime)
            (java.net URLEncoder)))
 
-;; TODO: maybe store cards not in alphabetical columns, but in column per bundle instead
 ;; TODO: add function to create a board and store id to `trello-humble-board-data.edn`
 
 
@@ -89,18 +88,6 @@
        nil])))
 
 
-(defn ^:private upload-to-trello!
-  "Creates a new card in my Humble Games Trello-board"
-  [title description image-url yt-url label-ids]
-  (when-let [card (trello/create-card! upload-list-id title
-                                       :description description
-                                       :image-url image-url
-                                       :label-ids label-ids)]
-    (when yt-url
-      (trello/add-comment! (:id card) yt-url))
-    :ok))
-
-
 (defn ^:private html->md [html]
   (-> (web/parse-html html)
       (web/search :body nil)
@@ -153,6 +140,20 @@
           system-requirements)))))
 
 
+(defn ^:private upload-to-trello!
+  "Creates a new card in my Humble Games Trello-board"
+  [item label-ids]
+  (let [{:keys [title image-url trailer-url expiration-date-string]} item]
+    (when-let [card (trello/create-card! upload-list-id title
+                      :description (build-md-description item)
+                      :image-url image-url
+                      :label-ids label-ids
+                      :due-date expiration-date-string)]
+      (when trailer-url
+        (trello/add-comment! (:id card) trailer-url))
+      :ok)))
+
+
 (defn ^:private create-delivery-method-label
   [delivery-method]
   (trello/create-label! board-id (string/capitalize delivery-method) :sky))
@@ -191,15 +192,13 @@
                         (memoize #(find-delivery-method-label all-labels (string/lower-case %))))]
     (doseq [item items]
       (println "Next:" (:title item))
-      (let [{:keys [title image-url trailer-url]} item
-            md-description (build-md-description item)
-            trello-labels (and upload?
+      (let [trello-labels (and upload?
                                (cons bundle-label-id (map find-label (:delivery-methods item))))]
         (print-flush " - Uploading to Trello... ")
-        (if (and upload? (upload-to-trello! title md-description image-url trailer-url trello-labels))
+        (if (and upload? (upload-to-trello! item trello-labels))
           (println "OK")
           (do (println (if upload? "Failed" "Skipped"))
-              (save-to-file! item md-description)))))))
+              (save-to-file! item (build-md-description item))))))))
 
 
 (defn process-humble-url!
